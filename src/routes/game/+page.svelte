@@ -434,7 +434,8 @@
 						}}
 					>
 						<span class="level-number">{i + 1}</span>
-						<span class="level-name">{name}</span>
+						<!-- Disable level name for now -->
+						<!-- <span class="level-name">{name}</span> -->
 						{#if completed[i]}
 							<span class="check">✓</span>
 						{/if}
