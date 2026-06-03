@@ -85,6 +85,101 @@
 	}
 
 	// -----------------------------------------------------------------------
+	// Data-driven menu actions
+	// -----------------------------------------------------------------------
+
+	interface MenuAction {
+		label: string;
+		action: () => void;
+		isPrimary?: boolean;
+	}
+
+	const pauseActions: MenuAction[] = $derived([
+		{
+			label: 'Resume',
+			action: () => {
+				paused = false;
+				focusedButtonIndex = 0;
+			}
+		},
+		{ label: 'Restart', action: () => startLevel(currentLevelIndex) },
+		{ label: 'Menu', action: goToMenu }
+	]);
+
+	const levelCompleteActions: MenuAction[] = $derived([
+		...(currentLevelIndex + 1 < TOTAL_LEVELS
+			? [
+					{
+						label: 'Next Level',
+						action: () => startLevel(currentLevelIndex + 1),
+						isPrimary: true as const
+					}
+				]
+			: []),
+		{ label: 'Replay', action: () => startLevel(currentLevelIndex) },
+		{ label: 'Menu', action: goToMenu }
+	]);
+
+	const gameOverActions: MenuAction[] = $derived([
+		{ label: 'Retry', action: () => startLevel(currentLevelIndex), isPrimary: true },
+		{ label: 'Menu', action: goToMenu }
+	]);
+
+	// -----------------------------------------------------------------------
+	// Generic keyboard navigation helpers
+	// -----------------------------------------------------------------------
+
+	/** Navigate a grid layout (level select). Returns true when Enter/Space is pressed. */
+	function navigateGrid(e: KeyboardEvent, cols: number, total: number): boolean {
+		switch (e.key) {
+			case 'ArrowLeft':
+				if (focusedButtonIndex % cols > 0) focusedButtonIndex--;
+				e.preventDefault();
+				break;
+			case 'ArrowRight':
+				if (focusedButtonIndex % cols < cols - 1 && focusedButtonIndex + 1 < total)
+					focusedButtonIndex++;
+				e.preventDefault();
+				break;
+			case 'ArrowUp':
+				if (focusedButtonIndex >= cols) focusedButtonIndex -= cols;
+				e.preventDefault();
+				break;
+			case 'ArrowDown':
+				if (focusedButtonIndex + cols < total) focusedButtonIndex += cols;
+				e.preventDefault();
+				break;
+			case 'Enter':
+			case ' ':
+				e.preventDefault();
+				return true;
+		}
+		return false;
+	}
+
+	/** Navigate a vertical list (pause / end screens). Returns true when Enter/Space/Escape is pressed. */
+	function navigateList(e: KeyboardEvent, total: number): boolean {
+		switch (e.key) {
+			case 'ArrowUp':
+				focusedButtonIndex = focusedButtonIndex <= 0 ? total - 1 : focusedButtonIndex - 1;
+				e.preventDefault();
+				break;
+			case 'ArrowDown':
+				focusedButtonIndex = focusedButtonIndex >= total - 1 ? 0 : focusedButtonIndex + 1;
+				e.preventDefault();
+				break;
+			case 'Enter':
+			case ' ':
+				e.preventDefault();
+				return true;
+			case 'Escape':
+				e.preventDefault();
+				return true;
+		}
+		return false;
+	}
+
+	// -----------------------------------------------------------------------
 	// Global keyboard handling
 	// -----------------------------------------------------------------------
 
@@ -93,19 +188,29 @@
 
 		if (currentScreen === 'playing') {
 			if (key === 'Escape') {
-				paused = !paused;
-				// Clear movement input so the player doesn't drift on resume
-				input.up = false;
-				input.down = false;
-				input.left = false;
-				input.right = false;
-				input.sprint = false;
+				if (paused) {
+					pauseActions[0].action(); // Resume
+				} else {
+					paused = true;
+					// Clear movement input so the player doesn't drift on resume
+					input.up = false;
+					input.down = false;
+					input.left = false;
+					input.right = false;
+					input.sprint = false;
+				}
 				e.preventDefault();
 				return;
 			}
 
 			if (paused) {
-				handlePauseMenuKey(e);
+				if (navigateList(e, pauseActions.length)) {
+					if (e.key === 'Escape') {
+						pauseActions[0].action(); // Resume
+					} else {
+						pauseActions[focusedButtonIndex].action();
+					}
+				}
 				return;
 			}
 
@@ -161,13 +266,33 @@
 			return;
 		}
 
-		// Menu navigation for non-playing screens
+		// Non-playing screens
+		if (key === 'Escape') {
+			goToMenu();
+			e.preventDefault();
+			return;
+		}
+
 		if (currentScreen === 'menu') {
-			handleMenuKey(e);
+			if (navigateGrid(e, 5, unlocked)) {
+				startLevel(focusedButtonIndex);
+			}
 		} else if (currentScreen === 'levelComplete') {
-			handleLevelCompleteMenuKey(e);
+			if (navigateList(e, levelCompleteActions.length)) {
+				if (e.key === 'Escape') {
+					goToMenu();
+				} else {
+					levelCompleteActions[focusedButtonIndex].action();
+				}
+			}
 		} else if (currentScreen === 'gameOver') {
-			handleGameOverMenuKey(e);
+			if (navigateList(e, gameOverActions.length)) {
+				if (e.key === 'Escape') {
+					goToMenu();
+				} else {
+					gameOverActions[focusedButtonIndex].action();
+				}
+			}
 		}
 	}
 
@@ -193,123 +318,6 @@
 				break;
 			case 'shift':
 				input.sprint = false;
-				break;
-		}
-	}
-
-	// -----------------------------------------------------------------------
-	// Menu keyboard navigation
-	// -----------------------------------------------------------------------
-
-	function handleMenuKey(e: KeyboardEvent) {
-		switch (e.key) {
-			case 'ArrowLeft':
-				if (focusedButtonIndex % 5 > 0) focusedButtonIndex--;
-				e.preventDefault();
-				break;
-			case 'ArrowRight':
-				if (focusedButtonIndex % 5 < 4 && focusedButtonIndex + 1 < unlocked) focusedButtonIndex++;
-				e.preventDefault();
-				break;
-			case 'ArrowUp':
-				if (focusedButtonIndex >= 5) focusedButtonIndex -= 5;
-				e.preventDefault();
-				break;
-			case 'ArrowDown':
-				if (focusedButtonIndex + 5 < unlocked) focusedButtonIndex += 5;
-				e.preventDefault();
-				break;
-			case 'Enter':
-			case ' ':
-				if (focusedButtonIndex < unlocked) startLevel(focusedButtonIndex);
-				e.preventDefault();
-				break;
-		}
-	}
-
-	function handleLevelCompleteMenuKey(e: KeyboardEvent) {
-		const buttonCount = currentLevelIndex + 1 < TOTAL_LEVELS ? 3 : 2;
-		switch (e.key) {
-			case 'ArrowUp':
-				focusedButtonIndex = focusedButtonIndex <= 0 ? buttonCount - 1 : focusedButtonIndex - 1;
-				e.preventDefault();
-				break;
-			case 'ArrowDown':
-				focusedButtonIndex = focusedButtonIndex >= buttonCount - 1 ? 0 : focusedButtonIndex + 1;
-				e.preventDefault();
-				break;
-			case 'Enter':
-			case ' ':
-				if (focusedButtonIndex === 0 && currentLevelIndex + 1 < TOTAL_LEVELS) {
-					startLevel(currentLevelIndex + 1);
-				} else if (focusedButtonIndex === (currentLevelIndex + 1 < TOTAL_LEVELS ? 1 : 0)) {
-					startLevel(currentLevelIndex);
-				} else {
-					goToMenu();
-				}
-				e.preventDefault();
-				break;
-			case 'Escape':
-				goToMenu();
-				e.preventDefault();
-				break;
-		}
-	}
-
-	function handleGameOverMenuKey(e: KeyboardEvent) {
-		const buttonCount = 2;
-		switch (e.key) {
-			case 'ArrowUp':
-				focusedButtonIndex = focusedButtonIndex <= 0 ? buttonCount - 1 : focusedButtonIndex - 1;
-				e.preventDefault();
-				break;
-			case 'ArrowDown':
-				focusedButtonIndex = focusedButtonIndex >= buttonCount - 1 ? 0 : focusedButtonIndex + 1;
-				e.preventDefault();
-				break;
-			case 'Enter':
-			case ' ':
-				if (focusedButtonIndex === 0) {
-					startLevel(currentLevelIndex);
-				} else {
-					goToMenu();
-				}
-				e.preventDefault();
-				break;
-			case 'Escape':
-				goToMenu();
-				e.preventDefault();
-				break;
-		}
-	}
-
-	function handlePauseMenuKey(e: KeyboardEvent) {
-		const buttonCount = 3;
-		switch (e.key) {
-			case 'ArrowUp':
-				focusedButtonIndex = focusedButtonIndex <= 0 ? buttonCount - 1 : focusedButtonIndex - 1;
-				e.preventDefault();
-				break;
-			case 'ArrowDown':
-				focusedButtonIndex = focusedButtonIndex >= buttonCount - 1 ? 0 : focusedButtonIndex + 1;
-				e.preventDefault();
-				break;
-			case 'Enter':
-			case ' ':
-				if (focusedButtonIndex === 0) {
-					paused = false;
-				} else if (focusedButtonIndex === 1) {
-					startLevel(currentLevelIndex);
-				} else {
-					goToMenu();
-				}
-				focusedButtonIndex = 0;
-				e.preventDefault();
-				break;
-			case 'Escape':
-				paused = false;
-				focusedButtonIndex = 0;
-				e.preventDefault();
 				break;
 		}
 	}
@@ -426,7 +434,7 @@
 						}}
 					>
 						<span class="level-number">{i + 1}</span>
-						<!-- <span class="level-name">{name}</span> -->
+						<span class="level-name">{name}</span>
 						{#if completed[i]}
 							<span class="check">✓</span>
 						{/if}
@@ -438,39 +446,19 @@
 		<div class="overlay pause-overlay">
 			<h2 class="end-title">Paused</h2>
 			<div class="btn-col">
-				<button
-					class="btn"
-					class:focused={focusedButtonIndex === 0}
-					onclick={() => {
-						paused = false;
-						focusedButtonIndex = 0;
-					}}
-					onmouseenter={() => {
-						focusedButtonIndex = 0;
-					}}
-				>
-					Resume
-				</button>
-				<button
-					class="btn"
-					class:focused={focusedButtonIndex === 1}
-					onclick={() => startLevel(currentLevelIndex)}
-					onmouseenter={() => {
-						focusedButtonIndex = 1;
-					}}
-				>
-					Restart
-				</button>
-				<button
-					class="btn"
-					class:focused={focusedButtonIndex === 2}
-					onclick={goToMenu}
-					onmouseenter={() => {
-						focusedButtonIndex = 2;
-					}}
-				>
-					Menu
-				</button>
+				{#each pauseActions as action, i (i)}
+					<button
+						class="btn"
+						class:primary={action.isPrimary}
+						class:focused={focusedButtonIndex === i}
+						onclick={action.action}
+						onmouseenter={() => {
+							focusedButtonIndex = i;
+						}}
+					>
+						{action.label}
+					</button>
+				{/each}
 			</div>
 			<p class="hint">Use Arrow keys / Enter to navigate</p>
 		</div>
@@ -479,38 +467,19 @@
 			<h2 class="end-title success">Level Complete!</h2>
 			<p class="end-subtitle">{LEVEL_NAMES[currentLevelIndex]} finished</p>
 			<div class="btn-col">
-				{#if currentLevelIndex + 1 < TOTAL_LEVELS}
+				{#each levelCompleteActions as action, i (i)}
 					<button
-						class="btn primary"
-						class:focused={focusedButtonIndex === 0}
-						onclick={() => startLevel(currentLevelIndex + 1)}
+						class="btn"
+						class:primary={action.isPrimary}
+						class:focused={focusedButtonIndex === i}
+						onclick={action.action}
 						onmouseenter={() => {
-							focusedButtonIndex = 0;
+							focusedButtonIndex = i;
 						}}
 					>
-						Next Level
+						{action.label}
 					</button>
-				{/if}
-				<button
-					class="btn"
-					class:focused={focusedButtonIndex === (currentLevelIndex + 1 < TOTAL_LEVELS ? 1 : 0)}
-					onclick={() => startLevel(currentLevelIndex)}
-					onmouseenter={() => {
-						focusedButtonIndex = currentLevelIndex + 1 < TOTAL_LEVELS ? 1 : 0;
-					}}
-				>
-					Replay
-				</button>
-				<button
-					class="btn"
-					class:focused={focusedButtonIndex === (currentLevelIndex + 1 < TOTAL_LEVELS ? 2 : 1)}
-					onclick={goToMenu}
-					onmouseenter={() => {
-						focusedButtonIndex = currentLevelIndex + 1 < TOTAL_LEVELS ? 2 : 1;
-					}}
-				>
-					Menu
-				</button>
+				{/each}
 			</div>
 			<p class="hint">Use Arrow keys / Enter to navigate</p>
 		</div>
@@ -519,26 +488,19 @@
 			<h2 class="end-title failure">Caught!</h2>
 			<p class="end-subtitle">The guards spotted you.</p>
 			<div class="btn-col">
-				<button
-					class="btn primary"
-					class:focused={focusedButtonIndex === 0}
-					onclick={() => startLevel(currentLevelIndex)}
-					onmouseenter={() => {
-						focusedButtonIndex = 0;
-					}}
-				>
-					Retry
-				</button>
-				<button
-					class="btn"
-					class:focused={focusedButtonIndex === 1}
-					onclick={goToMenu}
-					onmouseenter={() => {
-						focusedButtonIndex = 1;
-					}}
-				>
-					Menu
-				</button>
+				{#each gameOverActions as action, i (i)}
+					<button
+						class="btn"
+						class:primary={action.isPrimary}
+						class:focused={focusedButtonIndex === i}
+						onclick={action.action}
+						onmouseenter={() => {
+							focusedButtonIndex = i;
+						}}
+					>
+						{action.label}
+					</button>
+				{/each}
 			</div>
 			<p class="hint">Use Arrow keys / Enter to navigate</p>
 		</div>
