@@ -47,8 +47,5 @@
 		"vitest": "^4.1.8",
 		"vitest-browser-svelte": "^2.1.1",
 		"wrangler": "^4.96.0"
-	},
-	"dependencies": {
-		"bits-ui": "^2.18.1"
 	}
 }

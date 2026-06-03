@@ -1,3 +1,7 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+
+kbd {
+	@apply rounded border bg-neutral-700 px-1.5 py-0.5 font-mono text-xs font-semibold;
+}
