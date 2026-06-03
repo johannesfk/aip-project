@@ -129,6 +129,7 @@ export class GameEngine {
 			const guard: GuardEntity = {
 				id: i,
 				pos: cellCenter(def.pos),
+				spawnPos: cellCenter(def.pos),
 				state: GuardState.PATROL,
 				facing: def.facing,
 				patrolRoute: def.patrolRoute,
@@ -203,6 +204,7 @@ export class GameEngine {
 		for (const k of this.keycards) k.collected = false;
 		this.playerPos = cellCenter(this.playerStart);
 		for (const guard of this.guards) {
+			guard.pos = { ...guard.spawnPos };
 			guard.state = GuardState.PATROL;
 			guard.loseSightTimer = 0;
 			guard.reachedTimer = -1;

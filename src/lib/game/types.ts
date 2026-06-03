@@ -39,6 +39,7 @@ export interface InputState {
 export interface GuardEntity {
 	id: number;
 	pos: Position;
+	spawnPos: Position;
 	state: GuardState;
 	facing: Direction;
 	patrolRoute: Position[];
