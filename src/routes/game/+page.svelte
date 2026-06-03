@@ -78,6 +78,10 @@
 					if (pressed) engine.showPaths = !engine.showPaths;
 					handled = true;
 					break;
+				case 'escape':
+					if (pressed) engine.paused = !engine.paused;
+					handled = true;
+					break;
 				default:
 					break;
 			}

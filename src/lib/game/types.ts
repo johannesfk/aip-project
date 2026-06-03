@@ -86,6 +86,7 @@ export interface GameState {
 	totalKeycards: number;
 	gameOver: boolean;
 	won: boolean;
+	paused: boolean;
 	message: string;
 	showVisionCones: boolean;
 	showHearingRadius: boolean;

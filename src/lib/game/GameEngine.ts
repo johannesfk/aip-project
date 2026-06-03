@@ -18,7 +18,7 @@ import {
 	SEARCH_DURATION,
 	DIRECTION_VECTORS,
 	GUARD_VISION_RANGE,
-	GUARD_VISION_ANGLE,
+	GUARD_VISION_ANGLE
 } from './types';
 import { aStar, bfs, cellCenter, pixelToCell } from './Pathfinding';
 
@@ -112,6 +112,7 @@ export class GameEngine {
 	showVisionCones: boolean = true;
 	showHearingRadius: boolean = true;
 	showPaths: boolean = true;
+	paused: boolean = false;
 	algorithm: 'astar' | 'bfs' = 'astar';
 	totalNodesExplored: number = 0;
 
@@ -143,7 +144,7 @@ export class GameEngine {
 				visionRange: GUARD_VISION_RANGE,
 				visionAngle: GUARD_VISION_ANGLE,
 				hearingRange: GUARD_HEARING_RANGE,
-				nodesExplored: 0,
+				nodesExplored: 0
 			};
 			this.setPathTo(guard, def.patrolRoute[0]);
 			this.guards.push(guard);
@@ -156,7 +157,7 @@ export class GameEngine {
 			return this.getState();
 		}
 
-		if (this.gameOver) {
+		if (this.paused || this.gameOver) {
 			this.updateMessageTimer(dt);
 			return this.getState();
 		}
@@ -181,12 +182,13 @@ export class GameEngine {
 			totalKeycards: this.totalKeycards,
 			gameOver: this.gameOver,
 			won: this.won,
+			paused: this.paused,
 			message: this.message,
 			showVisionCones: this.showVisionCones,
 			showHearingRadius: this.showHearingRadius,
 			showPaths: this.showPaths,
 			nodesExplored: this.totalNodesExplored,
-			algorithm: this.algorithm,
+			algorithm: this.algorithm
 		};
 	}
 
@@ -514,7 +516,7 @@ export class GameEngine {
 			if (pc.x === gc.x && pc.y === gc.y && guard.state === GuardState.CHASE) {
 				this.gameOver = true;
 				this.won = false;
-				this.showMessage('CAUGHT! Press R to restart.');
+				// this.showMessage('CAUGHT! Press R to restart.');
 				return;
 			}
 		}
@@ -523,7 +525,7 @@ export class GameEngine {
 			if (this.collectedCount >= this.totalKeycards) {
 				this.gameOver = true;
 				this.won = true;
-				this.showMessage('MISSION COMPLETE! Press R to restart.');
+				// this.showMessage('MISSION COMPLETE! Press R to restart.');
 			} else if (this.message !== 'Collect all keycards first!') {
 				this.showMessage('Collect all keycards first!');
 			}

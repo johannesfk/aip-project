@@ -9,7 +9,7 @@ import {
 	CELL_SIZE,
 	GRID_WIDTH,
 	GRID_HEIGHT,
-	GUARD_HEARING_SPRINT_RANGE,
+	GUARD_HEARING_SPRINT_RANGE
 } from './types';
 
 const COLORS = {
@@ -38,8 +38,8 @@ const COLORS = {
 	pathLine: 'rgba(255, 82, 82, 0.4)',
 	uiText: '#e0e0e0',
 	uiBg: 'rgba(0, 0, 0, 0.7)',
-	overlayBg: 'rgba(0, 0, 0, 0.85)',
-	messageText: '#ffffff',
+	overlayBg: 'rgba(0, 0, 0, 0.1)',
+	messageText: '#ffffff'
 };
 
 function facingToAngle(facing: Direction): number {
@@ -85,7 +85,9 @@ export class Renderer {
 		this.drawPlayer(state);
 		this.drawUI(state);
 
-		if (state.gameOver) {
+		if (state.paused) {
+			this.drawPauseOverlay();
+		} else if (state.gameOver) {
 			this.drawOverlay(state);
 		}
 	}
@@ -249,7 +251,7 @@ export class Renderer {
 			[GuardState.PATROL]: COLORS.guardPatrol,
 			[GuardState.ALERT]: COLORS.guardAlert,
 			[GuardState.CHASE]: COLORS.guardChase,
-			[GuardState.SEARCH]: COLORS.guardSearch,
+			[GuardState.SEARCH]: COLORS.guardSearch
 		};
 
 		const color = stateColors[guard.state];
@@ -377,27 +379,23 @@ export class Renderer {
 		ctx.font = 'bold 13px monospace';
 		ctx.textAlign = 'left';
 		ctx.textBaseline = 'top';
-		ctx.fillText(
-			`Keycards: ${state.collectedCount}/${state.totalKeycards}`,
-			padding,
-			padding,
-		);
+		ctx.fillText(`Keycards: ${state.collectedCount}/${state.totalKeycards}`, padding, padding);
 
 		ctx.textAlign = 'right';
 		ctx.fillText(
 			`Algo: ${state.algorithm.toUpperCase()} | Nodes: ${state.nodesExplored}`,
 			this.width - padding,
-			padding,
+			padding
 		);
 
 		if (!state.gameOver) {
 			ctx.textAlign = 'center';
-			ctx.fillStyle = 'rgba(224, 224, 224, 0.4)';
+			ctx.fillStyle = 'rgba(224, 224, 224, 0.8)';
 			ctx.font = '10px monospace';
 			ctx.fillText(
-				'WASD: Move | Shift: Sprint | R: Restart | T: Algo | V: Vision | H: Hearing | P: Paths',
+				'WASD: Move | Shift: Sprint | Esc: Pause | R: Restart | T: Algo | V/H/P: Toggle',
 				this.width / 2,
-				this.height - padding - 3,
+				this.height - padding - 3
 			);
 		}
 
@@ -410,6 +408,21 @@ export class Renderer {
 			ctx.fillText(state.message, this.width / 2, this.height - 45);
 			ctx.globalAlpha = 1;
 		}
+	}
+
+	private drawPauseOverlay(): void {
+		const ctx = this.ctx;
+		ctx.fillStyle = COLORS.overlayBg;
+		ctx.fillRect(0, 0, this.width, this.height);
+
+		ctx.fillStyle = COLORS.uiText;
+		ctx.font = 'bold 36px monospace';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'middle';
+		ctx.fillText('PAUSED', this.width / 2, this.height / 2 - 20);
+
+		ctx.font = '14px monospace';
+		ctx.fillText('Press Esc to resume', this.width / 2, this.height / 2 + 20);
 	}
 
 	private drawOverlay(state: GameState): void {
