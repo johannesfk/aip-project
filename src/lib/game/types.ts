@@ -85,8 +85,10 @@ export interface GuardEntity {
 	spawnPos: Position;
 	/** Current FSM state. */
 	state: GuardState;
-	/** Cardinal direction the guard is facing (controls vision cone). */
-	facing: Direction;
+	/** Facing angle in radians (right = 0, CCW) — updated from movement direction. */
+	facing: number;
+	/** Spawn facing angle in radians — restored on restart. */
+	spawnFacing: number;
 	/** Ordered list of grid-cell waypoints visited during PATROL. */
 	patrolRoute: Position[];
 	/** Index into `patrolRoute` of the next waypoint to reach. */
@@ -99,11 +101,7 @@ export interface GuardEntity {
 	searchTimer: number;
 	/** Time elapsed since the guard last had visual contact during CHASE (seconds). */
 	loseSightTimer: number;
-	/**
-	 * Tracks how long the guard has been stationary after reaching the
-	 * ALERT destination.  Set to `-1` while still en route.
-	 */
-	reachedTimer: number;
+
 	/** Current A\* / BFS path (list of grid cells). */
 	path: Position[];
 	/** Current step index within `path`. */
@@ -118,6 +116,14 @@ export interface GuardEntity {
 	hearingRange: number;
 	/** Cumulative number of graph nodes visited by pathfinding for this guard. */
 	nodesExplored: number;
+	/** Current visual/detection facing offset in radians (head-turn sway). */
+	facingSway: number;
+	/** Personality: movement speed multiplier (deterministic per guard id). */
+	speedMult: number;
+	/** Personality: sway oscillation frequency multiplier. */
+	swayFreqMult: number;
+	/** Personality: SEARCH wander radius multiplier. */
+	searchRadiusMult: number;
 }
 
 /** Level-authoring data for a single guard. */
@@ -195,9 +201,9 @@ export const PLAYER_SPRINT_MULTIPLIER = 1.6;
 /** Guard movement speed per FSM state (px/s). */
 export const GUARD_SPEEDS: Record<GuardState, number> = {
 	[GuardState.PATROL]: 50,
-	[GuardState.ALERT]: 75,
+	[GuardState.ALERT]: 105,
 	[GuardState.CHASE]: 105,
-	[GuardState.SEARCH]: 45
+	[GuardState.SEARCH]: 70
 };
 
 /** How far the guard can see (grid cells, Euclidean). */

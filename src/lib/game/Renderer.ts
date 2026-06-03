@@ -16,7 +16,6 @@
 
 import {
 	CellType,
-	Direction,
 	GuardState,
 	type GameState,
 	type GuardEntity,
@@ -60,20 +59,6 @@ const COLORS = {
 };
 
 // ---- Helpers --------------------------------------------------------------
-
-/** Convert a cardinal direction to a radian angle (right = 0, CCW). */
-function facingToAngle(facing: Direction): number {
-	switch (facing) {
-		case Direction.RIGHT:
-			return 0;
-		case Direction.DOWN:
-			return Math.PI / 2;
-		case Direction.LEFT:
-			return Math.PI;
-		case Direction.UP:
-			return -Math.PI / 2;
-	}
-}
 
 // ---- Renderer class -------------------------------------------------------
 
@@ -279,7 +264,7 @@ export class Renderer {
 		ctx.fill();
 		ctx.stroke();
 
-		const facingAngle = facingToAngle(guard.facing);
+		const facingAngle = guard.facing + guard.facingSway;
 		const eyeX = px + Math.cos(facingAngle) * r * 0.5;
 		const eyeY = py + Math.sin(facingAngle) * r * 0.5;
 		ctx.fillStyle = '#ffffff';
@@ -340,7 +325,7 @@ export class Renderer {
 		const ctx = this.ctx;
 		const gx = guard.pos.x;
 		const gy = guard.pos.y;
-		const angle = facingToAngle(guard.facing);
+		const angle = guard.facing + guard.facingSway;
 		const halfAngle = (guard.visionAngle * Math.PI) / 360;
 		const maxDist = guard.visionRange * CELL_SIZE;
 		const numRays = 48;

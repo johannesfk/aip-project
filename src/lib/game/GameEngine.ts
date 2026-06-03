@@ -30,6 +30,31 @@ import {
 } from './types';
 import { aStar, bfs, cellCenter, pixelToCell } from './Pathfinding';
 
+/** Count how many WALL or COVER cells lie on the line between `from` and `to`. */
+function countObstaclesOnLine(from: Position, to: Position, grid: CellType[][]): number {
+	const cells = bresenhamLine(from, to);
+	let count = 0;
+	for (const cell of cells) {
+		const t = grid[cell.y]?.[cell.x];
+		if (t === CellType.WALL || t === CellType.COVER) count++;
+	}
+	return count;
+}
+
+/** Deterministic personality traits per guard id so restarts stay consistent. */
+function getGuardPersonality(id: number): {
+	speedMult: number;
+	swayFreqMult: number;
+	searchRadiusMult: number;
+} {
+	const personalities = [
+		{ speedMult: 1.0, swayFreqMult: 1.0, searchRadiusMult: 1.0 },
+		{ speedMult: 1.1, swayFreqMult: 0.8, searchRadiusMult: 1.2 },
+		{ speedMult: 0.9, swayFreqMult: 1.3, searchRadiusMult: 0.8 }
+	];
+	return personalities[id % personalities.length];
+}
+
 // ---- Geometry helpers -----------------------------------------------------
 
 /** Manhattan distance between two positions (grid- or pixel-space). */
@@ -37,9 +62,9 @@ function manhattan(a: Position, b: Position): number {
 	return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
-/** Convert a cardinal direction to a radian angle (right = 0, CCW). */
-function facingToAngle(facing: Direction): number {
-	switch (facing) {
+/** Convert a level-authoring cardinal direction to a radian angle (right = 0, CCW). */
+function directionToAngle(dir: Direction): number {
+	switch (dir) {
 		case Direction.RIGHT:
 			return 0;
 		case Direction.DOWN:
@@ -49,15 +74,6 @@ function facingToAngle(facing: Direction): number {
 		case Direction.UP:
 			return -Math.PI / 2;
 	}
-}
-
-/** Snap a radian angle to the nearest cardinal direction. */
-function angleToFacing(angle: number): Direction {
-	const normalized = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-	if (normalized < Math.PI / 4 || normalized > 7 * (Math.PI / 4)) return Direction.RIGHT;
-	if (normalized < 3 * (Math.PI / 4)) return Direction.DOWN;
-	if (normalized < 5 * (Math.PI / 4)) return Direction.LEFT;
-	return Direction.UP;
 }
 
 /** Move `pos` toward `target` at `speed` px/s, clamping overshoot. */
@@ -120,6 +136,7 @@ export class GameEngine {
 	// Mutable simulation state
 	private playerPos: Position;
 	private playerSprinting: boolean = false;
+	private playerMoving: boolean = false;
 	private guards: GuardEntity[] = [];
 	private keycards: KeycardState[];
 	private collectedCount: number = 0;
@@ -151,26 +168,30 @@ export class GameEngine {
 		// Spawn guards from level definitions.
 		for (let i = 0; i < level.guardDefs.length; i++) {
 			const def = level.guardDefs[i];
+			const personality = getGuardPersonality(i);
+			const spawnAngle = directionToAngle(def.facing);
 			const guard: GuardEntity = {
 				id: i,
 				pos: cellCenter(def.pos),
 				spawnPos: cellCenter(def.pos),
 				state: GuardState.PATROL,
-				facing: def.facing,
+				facing: spawnAngle,
+				spawnFacing: spawnAngle,
 				patrolRoute: def.patrolRoute,
 				patrolIndex: 0,
 				lastKnownPlayerPos: null,
 				stateTimer: 0,
 				searchTimer: 0,
 				loseSightTimer: 0,
-				reachedTimer: -1,
 				path: [],
 				pathIndex: 0,
-				speed: GUARD_SPEEDS[GuardState.PATROL],
+				speed: GUARD_SPEEDS[GuardState.PATROL] * personality.speedMult,
 				visionRange: GUARD_VISION_RANGE,
 				visionAngle: GUARD_VISION_ANGLE,
 				hearingRange: GUARD_HEARING_RANGE,
-				nodesExplored: 0
+				nodesExplored: 0,
+				facingSway: 0,
+				...personality
 			};
 			// Begin patrolling toward the first waypoint.
 			this.setPathTo(guard, def.patrolRoute[0]);
@@ -238,6 +259,7 @@ export class GameEngine {
 		this.messageTimer = 0;
 		this.collectedCount = 0;
 		this.playerSprinting = false;
+		this.playerMoving = false;
 		this.totalNodesExplored = 0;
 		for (const k of this.keycards) k.collected = false;
 		this.playerPos = cellCenter(this.playerStart);
@@ -245,11 +267,12 @@ export class GameEngine {
 			guard.pos = { ...guard.spawnPos };
 			guard.state = GuardState.PATROL;
 			guard.loseSightTimer = 0;
-			guard.reachedTimer = -1;
 			guard.searchTimer = 0;
 			guard.lastKnownPlayerPos = null;
 			guard.nodesExplored = 0;
-			guard.speed = GUARD_SPEEDS[GuardState.PATROL];
+			guard.facingSway = 0;
+			guard.facing = guard.spawnFacing;
+			guard.speed = GUARD_SPEEDS[GuardState.PATROL] * guard.speedMult;
 			guard.patrolIndex = 0;
 			this.setPathTo(guard, guard.patrolRoute[0]);
 		}
@@ -272,8 +295,11 @@ export class GameEngine {
 
 		if (dx === 0 && dy === 0) {
 			this.playerSprinting = false;
+			this.playerMoving = false;
 			return;
 		}
+
+		this.playerMoving = true;
 
 		// Normalize diagonal movement (1 / √2 ≈ 0.7071).
 		if (dx !== 0 && dy !== 0) {
@@ -310,11 +336,24 @@ export class GameEngine {
 
 	// --- Guard AI — FSM orchestration ---------------------------------------
 
-	/** Tick every guard: increment stateTimer, then run FSM logic. */
+	/** Tick every guard: increment timers, update head sway, then run FSM logic. */
 	private updateGuards(dt: number): void {
 		for (const guard of this.guards) {
 			guard.stateTimer += dt;
+			if (guard.state === GuardState.SEARCH) guard.searchTimer += dt;
+			this.updateFacingSway(guard);
 			this.updateGuardState(guard, dt);
+		}
+	}
+
+	/** Oscillate the guard's head-turn offset based on their current state and personality. */
+	private updateFacingSway(guard: GuardEntity): void {
+		if (guard.state === GuardState.PATROL) {
+			guard.facingSway = Math.sin(guard.stateTimer * 1.5 * guard.swayFreqMult) * 0.4;
+		} else if (guard.state === GuardState.SEARCH) {
+			guard.facingSway = Math.sin(guard.searchTimer * 3.0 * guard.swayFreqMult) * 1.0;
+		} else {
+			guard.facingSway = 0;
 		}
 	}
 
@@ -368,16 +407,20 @@ export class GameEngine {
 					guard.lastKnownPlayerPos = pc;
 					guard.loseSightTimer = 0;
 					this.setPathTo(guard, pc);
+				} else if (canHear) {
+					// New sound while investigating — redirect toward it.
+					guard.lastKnownPlayerPos = pc;
+					this.setPathTo(guard, pc);
+					this.followPath(guard, dt);
+				} else if (guard.stateTimer >= 3.0) {
+					// Give up after 3 seconds of ALERT with no sight or hearing.
+					this.transitionGuard(guard, GuardState.PATROL);
+					this.setPathTo(guard, guard.patrolRoute[guard.patrolIndex]);
 				} else if (this.hasReachedPathEnd(guard)) {
-					// Arrived at investigation point — pause briefly.
-					if (guard.reachedTimer < 0) guard.reachedTimer = 0;
-					guard.reachedTimer += dt;
-					if (guard.reachedTimer > 0.8) {
-						this.transitionGuard(guard, GuardState.PATROL);
-						this.setPathTo(guard, guard.patrolRoute[guard.patrolIndex]);
-					}
+					// Arrived at investigation point — sweep the immediate area.
+					this.pickMiniSearchTarget(guard);
+					this.followPath(guard, dt);
 				} else {
-					guard.reachedTimer = -1;
 					this.followPath(guard, dt);
 				}
 				break;
@@ -405,7 +448,6 @@ export class GameEngine {
 
 			// ---- SEARCH ----------------------------------------------------
 			case GuardState.SEARCH:
-				guard.searchTimer += dt;
 				if (canSee) {
 					this.transitionGuard(guard, GuardState.CHASE);
 					guard.lastKnownPlayerPos = pc;
@@ -435,8 +477,7 @@ export class GameEngine {
 		if (guard.state === to) return;
 		guard.state = to;
 		guard.stateTimer = 0;
-		guard.reachedTimer = -1;
-		guard.speed = GUARD_SPEEDS[to];
+		guard.speed = GUARD_SPEEDS[to] * guard.speedMult;
 	}
 
 	// --- Sensing ------------------------------------------------------------
@@ -457,9 +498,9 @@ export class GameEngine {
 		if (dist > guard.visionRange) return false;
 		if (dist < 0.5) return true; // same cell
 
-		// Angle check within the vision cone.
+		// Angle check within the vision cone (including head-turn sway).
 		const angleToPlayer = Math.atan2(dy, dx);
-		const facingAngle = facingToAngle(guard.facing);
+		const facingAngle = guard.facing + guard.facingSway;
 		let diff = angleToPlayer - facingAngle;
 		while (diff > Math.PI) diff -= 2 * Math.PI;
 		while (diff < -Math.PI) diff += 2 * Math.PI;
@@ -480,13 +521,24 @@ export class GameEngine {
 		return true;
 	}
 
-	/** Proximity check using Manhattan distance; range doubles when the player sprints. */
+	/**
+	 * Hearing check:
+	 *  1. The player must be moving (walking or sprinting).
+	 *  2. Compute base range (sprint vs walk).
+	 *  3. Reduce range by the number of WALL/COVER cells on the line between guard and player.
+	 *  4. Check Manhattan distance against the effective range.
+	 */
 	private canHearPlayer(guard: GuardEntity): boolean {
+		const mustBeMoving = guard.state === GuardState.PATROL;
+		if (mustBeMoving && !this.playerMoving) return false;
+
 		const gc = pixelToCell(guard.pos.x, guard.pos.y);
 		const pc = this.getPlayerCell();
 		const dist = manhattan(gc, pc);
-		const range = this.playerSprinting ? GUARD_HEARING_SPRINT_RANGE : GUARD_HEARING_RANGE;
-		return dist <= range;
+		const baseRange = this.playerSprinting ? GUARD_HEARING_SPRINT_RANGE : GUARD_HEARING_RANGE;
+		const obstacleCount = countObstaclesOnLine(gc, pc, this.grid);
+		const effectiveRange = Math.max(0, baseRange - obstacleCount);
+		return dist <= effectiveRange;
 	}
 
 	// --- Movement helpers ---------------------------------------------------
@@ -530,9 +582,9 @@ export class GameEngine {
 
 		moveToward(guard.pos, target, guard.speed, dt);
 
-		// Update the guard's facing direction based on movement.
+		// Update the guard's facing direction based on movement (no snapping to cardinal).
 		if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
-			guard.facing = angleToFacing(Math.atan2(dy, dx));
+			guard.facing = Math.atan2(dy, dx);
 		}
 	}
 
@@ -579,9 +631,43 @@ export class GameEngine {
 	}
 
 	/**
-	 * Pick a random walkable cell near `lastKnownPlayerPos` (±2 cells)
-	 * and path toward it.  This gives the SEARCH behaviour a natural
-	 * "sweep the area" feel.
+	 * Pick a random walkable cell within ±2 of `lastKnownPlayerPos`
+	 * and path toward it.  Used in ALERT so the guard sweeps the
+	 * immediate investigation area instead of freezing in place.
+	 */
+	private pickMiniSearchTarget(guard: GuardEntity): void {
+		if (!guard.lastKnownPlayerPos) return;
+
+		const cx = guard.lastKnownPlayerPos.x;
+		const cy = guard.lastKnownPlayerPos.y;
+		const candidates: Position[] = [];
+
+		for (let dy = -2; dy <= 2; dy++) {
+			for (let dx = -2; dx <= 2; dx++) {
+				const nx = cx + dx;
+				const ny = cy + dy;
+				if (
+					ny >= 0 &&
+					ny < this.grid.length &&
+					nx >= 0 &&
+					nx < this.grid[0].length &&
+					this.grid[ny][nx] === CellType.EMPTY
+				) {
+					candidates.push({ x: nx, y: ny });
+				}
+			}
+		}
+
+		if (candidates.length > 0) {
+			const pick = candidates[Math.floor(Math.random() * candidates.length)];
+			this.setPathTo(guard, pick);
+		}
+	}
+
+	/**
+	 * Pick a random walkable cell near `lastKnownPlayerPos`
+	 * and path toward it.  Radius scales with the guard's personality.
+	 * This gives the SEARCH behaviour a natural "sweep the area" feel.
 	 */
 	private pickSearchTarget(guard: GuardEntity): void {
 		if (!guard.lastKnownPlayerPos) {
@@ -592,9 +678,10 @@ export class GameEngine {
 		const cx = guard.lastKnownPlayerPos.x;
 		const cy = guard.lastKnownPlayerPos.y;
 		const candidates: Position[] = [];
+		const r = Math.round(5 * guard.searchRadiusMult);
 
-		for (let dy = -2; dy <= 2; dy++) {
-			for (let dx = -2; dx <= 2; dx++) {
+		for (let dy = -r; dy <= r; dy++) {
+			for (let dx = -r; dx <= r; dx++) {
 				const nx = cx + dx;
 				const ny = cy + dy;
 				if (

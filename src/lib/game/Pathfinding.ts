@@ -15,37 +15,64 @@ function key(p: Position): string {
 	return `${p.x},${p.y}`;
 }
 
-/** Manhattan distance heuristic — admissible on a 4-connected grid. */
-function manhattan(a: Position, b: Position): number {
-	return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+/** Chebyshev distance heuristic — admissible on an 8-connected uniform-cost grid. */
+function chebyshev(a: Position, b: Position): number {
+	return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
 
 /**
- * Return the four cardinal neighbours of `pos` that are inside the grid
- * bounds and are **not** walls or cover cells (both are impassable).
+ * Return the 8-connected neighbours of `pos` that are inside the grid
+ * bounds and are **not** walls or cover cells.
+ *
+ * Diagonal moves are only allowed when both adjacent cardinal cells are
+ * walkable, preventing the guard from cutting through wall corners.
  */
 function getNeighbors(grid: CellType[][], pos: Position): Position[] {
 	const dirs = [
-		{ x: 0, y: -1 },
-		{ x: 0, y: 1 },
-		{ x: -1, y: 0 },
-		{ x: 1, y: 0 }
+		{ x: 0, y: -1, diagonal: false },
+		{ x: 0, y: 1, diagonal: false },
+		{ x: -1, y: 0, diagonal: false },
+		{ x: 1, y: 0, diagonal: false },
+		{ x: -1, y: -1, diagonal: true },
+		{ x: 1, y: -1, diagonal: true },
+		{ x: -1, y: 1, diagonal: true },
+		{ x: 1, y: 1, diagonal: true }
 	];
 	const result: Position[] = [];
 
 	for (const d of dirs) {
 		const nx = pos.x + d.x;
 		const ny = pos.y + d.y;
+
+		// Grid bounds and cell walkability.
 		if (
-			ny >= 0 &&
-			ny < grid.length &&
-			nx >= 0 &&
-			nx < grid[0].length &&
-			grid[ny][nx] !== CellType.WALL &&
-			grid[ny][nx] !== CellType.COVER
+			ny < 0 ||
+			ny >= grid.length ||
+			nx < 0 ||
+			nx >= grid[0].length ||
+			grid[ny][nx] === CellType.WALL ||
+			grid[ny][nx] === CellType.COVER
 		) {
-			result.push({ x: nx, y: ny });
+			continue;
 		}
+
+		// Corner-cutting prevention for diagonals.
+		if (d.diagonal) {
+			const cx1 = pos.x + d.x;
+			const cy1 = pos.y;
+			const cx2 = pos.x;
+			const cy2 = pos.y + d.y;
+			if (
+				grid[cy1][cx1] === CellType.WALL ||
+				grid[cy1][cx1] === CellType.COVER ||
+				grid[cy2][cx2] === CellType.WALL ||
+				grid[cy2][cx2] === CellType.COVER
+			) {
+				continue;
+			}
+		}
+
+		result.push({ x: nx, y: ny });
 	}
 
 	return result;
@@ -72,9 +99,9 @@ export interface PathResult {
 }
 
 /**
- * A\* search on a uniform-cost 4-connected grid.
+ * A\* search on a uniform-cost 8-connected grid.
  *
- * Uses the Manhattan distance as an admissible heuristic.  The open set
+ * Uses the Chebyshev distance as an admissible heuristic.  The open set
  * is managed with a linear scan (sufficient for a 30×20 grid).
  */
 export function aStar(grid: CellType[][], start: Position, goal: Position): PathResult {
@@ -84,7 +111,7 @@ export function aStar(grid: CellType[][], start: Position, goal: Position): Path
 	const gScore = new Map<string, number>();
 	const startKey = key(start);
 
-	openSet.push({ pos: start, f: manhattan(start, goal), g: 0 });
+	openSet.push({ pos: start, f: chebyshev(start, goal), g: 0 });
 	gScore.set(startKey, 0);
 
 	let nodesExplored = 0;
@@ -113,7 +140,7 @@ export function aStar(grid: CellType[][], start: Position, goal: Position): Path
 				gScore.set(nKey, tentativeG);
 				openSet.push({
 					pos: neighbor,
-					f: tentativeG + manhattan(neighbor, goal),
+					f: tentativeG + chebyshev(neighbor, goal),
 					g: tentativeG
 				});
 			}
