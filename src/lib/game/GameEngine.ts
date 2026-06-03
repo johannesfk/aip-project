@@ -1,3 +1,12 @@
+// ---------------------------------------------------------------------------
+// GameEngine — Core simulation: player movement, guard AI, and win/lose logic
+// ---------------------------------------------------------------------------
+// The engine is entirely deterministic except for the random-walk used
+// during the SEARCH state.  It receives keyboard input, advances the
+// simulation by `dt` seconds, and produces a deep-cloned `GameState`
+// snapshot that the renderer consumes without side effects.
+// ---------------------------------------------------------------------------
+
 import {
 	CellType,
 	Direction,
@@ -16,20 +25,19 @@ import {
 	PLAYER_SPRINT_MULTIPLIER,
 	CHASE_LOSE_SIGHT_TIME,
 	SEARCH_DURATION,
-	DIRECTION_VECTORS,
 	GUARD_VISION_RANGE,
 	GUARD_VISION_ANGLE
 } from './types';
 import { aStar, bfs, cellCenter, pixelToCell } from './Pathfinding';
 
-function posKey(p: Position): string {
-	return `${p.x},${p.y}`;
-}
+// ---- Geometry helpers -----------------------------------------------------
 
+/** Manhattan distance between two positions (grid- or pixel-space). */
 function manhattan(a: Position, b: Position): number {
 	return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
+/** Convert a cardinal direction to a radian angle (right = 0, CCW). */
 function facingToAngle(facing: Direction): number {
 	switch (facing) {
 		case Direction.RIGHT:
@@ -43,6 +51,7 @@ function facingToAngle(facing: Direction): number {
 	}
 }
 
+/** Snap a radian angle to the nearest cardinal direction. */
 function angleToFacing(angle: number): Direction {
 	const normalized = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
 	if (normalized < Math.PI / 4 || normalized > 7 * (Math.PI / 4)) return Direction.RIGHT;
@@ -51,6 +60,7 @@ function angleToFacing(angle: number): Direction {
 	return Direction.UP;
 }
 
+/** Move `pos` toward `target` at `speed` px/s, clamping overshoot. */
 function moveToward(pos: Position, target: Position, speed: number, dt: number): void {
 	const dx = target.x - pos.x;
 	const dy = target.y - pos.y;
@@ -65,6 +75,12 @@ function moveToward(pos: Position, target: Position, speed: number, dt: number):
 	pos.y += (dy / dist) * step;
 }
 
+/**
+ * Bresenham's line algorithm in grid-cell space.
+ *
+ * Returns every intermediate cell between `from` and `to` (exclusive of
+ * `from`, inclusive of `to`).  Used for line-of-sight occlusion checks.
+ */
 function bresenhamLine(from: Position, to: Position): Position[] {
 	const cells: Position[] = [];
 	let x0 = from.x;
@@ -77,8 +93,7 @@ function bresenhamLine(from: Position, to: Position): Position[] {
 	const sy = y0 < y1 ? 1 : -1;
 	let err = dx - dy;
 
-	while (true) {
-		if (x0 === x1 && y0 === y1) break;
+	while (x0 === x1 && y0 === y1) {
 		const e2 = 2 * err;
 		if (e2 > -dy) {
 			err -= dy;
@@ -94,14 +109,19 @@ function bresenhamLine(from: Position, to: Position): Position[] {
 	return cells;
 }
 
+// ---- GameEngine -----------------------------------------------------------
+
 export class GameEngine {
+	// Static level data
 	private grid: CellType[][];
 	private playerStart: Position;
+	private exitPos: Position;
+
+	// Mutable simulation state
 	private playerPos: Position;
 	private playerSprinting: boolean = false;
 	private guards: GuardEntity[] = [];
 	private keycards: KeycardState[];
-	private exitPos: Position;
 	private collectedCount: number = 0;
 	private totalKeycards: number;
 	private gameOver: boolean = false;
@@ -109,11 +129,16 @@ export class GameEngine {
 	private message: string = '';
 	private messageTimer: number = 0;
 
+	// Toggles driven by keyboard shortcuts
 	showVisionCones: boolean = true;
 	showHearingRadius: boolean = true;
 	showPaths: boolean = true;
 	paused: boolean = false;
+
+	/** Which pathfinding algorithm guards use this frame.  Toggled with T. */
 	algorithm: 'astar' | 'bfs' = 'astar';
+
+	/** Cumulative node count across all guards and all frames. */
 	totalNodesExplored: number = 0;
 
 	constructor(level: LevelData) {
@@ -124,6 +149,7 @@ export class GameEngine {
 		this.keycards = level.keycardPositions.map((p) => ({ pos: p, collected: false }));
 		this.exitPos = level.exitPos;
 
+		// Spawn guards from level definitions.
 		for (let i = 0; i < level.guardDefs.length; i++) {
 			const def = level.guardDefs[i];
 			const guard: GuardEntity = {
@@ -147,17 +173,27 @@ export class GameEngine {
 				hearingRange: GUARD_HEARING_RANGE,
 				nodesExplored: 0
 			};
+			// Begin patrolling toward the first waypoint.
 			this.setPathTo(guard, def.patrolRoute[0]);
 			this.guards.push(guard);
 		}
 	}
 
+	// --- Public API ---------------------------------------------------------
+
+	/**
+	 * Advance the simulation by `dt` seconds.
+	 *
+	 * @returns A deep-cloned `GameState` snapshot for the renderer.
+	 */
 	update(dt: number, input: InputState): GameState {
+		// Restart takes precedence over everything.
 		if (input.restart) {
 			this.reset(input);
 			return this.getState();
 		}
 
+		// Paused or game-over: freeze the world, only tick the message timer.
 		if (this.paused || this.gameOver) {
 			this.updateMessageTimer(dt);
 			return this.getState();
@@ -172,6 +208,7 @@ export class GameEngine {
 		return this.getState();
 	}
 
+	/** Produce a deep-cloned snapshot of the current game state. */
 	getState(): GameState {
 		return {
 			playerPos: { ...this.playerPos },
@@ -193,6 +230,9 @@ export class GameEngine {
 		};
 	}
 
+	// --- Reset --------------------------------------------------------------
+
+	/** Restore all mutable state to its initial values (press R). */
 	private reset(input: InputState): void {
 		this.gameOver = false;
 		this.won = false;
@@ -218,6 +258,12 @@ export class GameEngine {
 		input.restart = false;
 	}
 
+	// --- Player movement ----------------------------------------------------
+
+	/**
+	 * Apply keyboard input to the player position with axis-independent
+	 * wall-sliding collision.
+	 */
 	private updatePlayer(dt: number, input: InputState): void {
 		let dx = 0;
 		let dy = 0;
@@ -231,6 +277,7 @@ export class GameEngine {
 			return;
 		}
 
+		// Normalize diagonal movement (1 / √2 ≈ 0.7071).
 		if (dx !== 0 && dy !== 0) {
 			dx *= 0.7071;
 			dy *= 0.7071;
@@ -247,6 +294,8 @@ export class GameEngine {
 		const oldCellX = Math.floor(this.playerPos.x / CELL_SIZE);
 		const oldCellY = Math.floor(this.playerPos.y / CELL_SIZE);
 
+		// Axis-independent wall sliding: try moving in both axes, then each
+		// axis separately (sliding along the wall).
 		const canMoveX = this.isWalkable(newCellX, oldCellY);
 		const canMoveY = this.isWalkable(oldCellX, newCellY);
 		const canMoveBoth = this.isWalkable(newCellX, newCellY);
@@ -261,6 +310,9 @@ export class GameEngine {
 		}
 	}
 
+	// --- Guard AI — FSM orchestration ---------------------------------------
+
+	/** Tick every guard: increment stateTimer, then run FSM logic. */
 	private updateGuards(dt: number): void {
 		for (const guard of this.guards) {
 			guard.stateTimer += dt;
@@ -268,12 +320,34 @@ export class GameEngine {
 		}
 	}
 
+	/**
+	 * The guard Finite State Machine.
+	 *
+	 * Transitions are driven by three sensing queries every frame:
+	 *  1. `canSeePlayer` — vision-cone + line-of-sight check.
+	 *  2. `canHearPlayer` — proximity check (amplified when sprinting).
+	 *  3. Timer thresholds (lose-sight, search-duration, alert-pause).
+	 *
+	 * State diagram:
+	 * ```
+	 * PATROL ──(see)───────▶ CHASE
+	 *    │                    │ (lose sight >2s)
+	 *    │ (hear)             ▼
+	 *    ├──────────────▶ SEARCH ──(timer 5s)──▶ PATROL
+	 *    │                    │ (see/hear)
+	 *    ▼                    ▼
+	 *  ALERT ──(see)──────▶ CHASE
+	 *    │
+	 *    └──(reach target + pause 0.8s)──▶ PATROL
+	 * ```
+	 */
 	private updateGuardState(guard: GuardEntity, dt: number): void {
 		const canSee = this.canSeePlayer(guard);
 		const canHear = this.canHearPlayer(guard);
 		const pc = this.getPlayerCell();
 
 		switch (guard.state) {
+			// ---- PATROL -----------------------------------------------------
 			case GuardState.PATROL:
 				if (canSee) {
 					this.transitionGuard(guard, GuardState.CHASE);
@@ -289,6 +363,7 @@ export class GameEngine {
 				}
 				break;
 
+			// ---- ALERT -----------------------------------------------------
 			case GuardState.ALERT:
 				if (canSee) {
 					this.transitionGuard(guard, GuardState.CHASE);
@@ -296,6 +371,7 @@ export class GameEngine {
 					guard.loseSightTimer = 0;
 					this.setPathTo(guard, pc);
 				} else if (this.hasReachedPathEnd(guard)) {
+					// Arrived at investigation point — pause briefly.
 					if (guard.reachedTimer < 0) guard.reachedTimer = 0;
 					guard.reachedTimer += dt;
 					if (guard.reachedTimer > 0.8) {
@@ -308,8 +384,10 @@ export class GameEngine {
 				}
 				break;
 
+			// ---- CHASE -----------------------------------------------------
 			case GuardState.CHASE:
 				if (canSee) {
+					// Continuously re-path toward the player.
 					guard.loseSightTimer = 0;
 					guard.lastKnownPlayerPos = pc;
 					this.setPathTo(guard, pc);
@@ -321,11 +399,13 @@ export class GameEngine {
 						guard.searchTimer = 0;
 						this.pickSearchTarget(guard);
 					} else {
+						// Still following the last-known path.
 						this.followPath(guard, dt);
 					}
 				}
 				break;
 
+			// ---- SEARCH ----------------------------------------------------
 			case GuardState.SEARCH:
 				guard.searchTimer += dt;
 				if (canSee) {
@@ -349,6 +429,10 @@ export class GameEngine {
 		}
 	}
 
+	/**
+	 * Move the guard to a new FSM state, resetting the per-state timer and
+	 * switching to the movement speed appropriate for the target state.
+	 */
 	private transitionGuard(guard: GuardEntity, to: GuardState): void {
 		if (guard.state === to) return;
 		guard.state = to;
@@ -357,6 +441,14 @@ export class GameEngine {
 		guard.speed = GUARD_SPEEDS[to];
 	}
 
+	// --- Sensing ------------------------------------------------------------
+
+	/**
+	 * Three-step vision check:
+	 *  1. Is the player within the vision range (Euclidean)?
+	 *  2. Is the player within the vision cone arc (± half-angle)?
+	 *  3. Is there an unobstructed line-of-sight (Bresenham)?
+	 */
 	private canSeePlayer(guard: GuardEntity): boolean {
 		const gc = pixelToCell(guard.pos.x, guard.pos.y);
 		const pc = this.getPlayerCell();
@@ -365,8 +457,9 @@ export class GameEngine {
 		const dist = Math.sqrt(dx * dx + dy * dy);
 
 		if (dist > guard.visionRange) return false;
-		if (dist < 0.5) return true;
+		if (dist < 0.5) return true; // same cell
 
+		// Angle check within the vision cone.
 		const angleToPlayer = Math.atan2(dy, dx);
 		const facingAngle = facingToAngle(guard.facing);
 		let diff = angleToPlayer - facingAngle;
@@ -379,6 +472,7 @@ export class GameEngine {
 		return this.hasLineOfSight(gc, pc);
 	}
 
+	/** Check whether every intermediate cell between `from` and `to` is free of walls and cover. */
 	private hasLineOfSight(from: Position, to: Position): boolean {
 		const cells = bresenhamLine(from, to);
 		for (const cell of cells) {
@@ -388,6 +482,7 @@ export class GameEngine {
 		return true;
 	}
 
+	/** Proximity check using Manhattan distance; range doubles when the player sprints. */
 	private canHearPlayer(guard: GuardEntity): boolean {
 		const gc = pixelToCell(guard.pos.x, guard.pos.y);
 		const pc = this.getPlayerCell();
@@ -396,6 +491,12 @@ export class GameEngine {
 		return dist <= range;
 	}
 
+	// --- Movement helpers ---------------------------------------------------
+
+	/**
+	 * Advance the guard along its patrol route.  When the current waypoint
+	 * is reached, cycle to the next one and re-path.
+	 */
 	private moveToPatrolWaypoint(guard: GuardEntity, dt: number): void {
 		if (guard.patrolRoute.length === 0) return;
 
@@ -407,6 +508,10 @@ export class GameEngine {
 		this.followPath(guard, dt);
 	}
 
+	/**
+	 * Move the guard one step along its current path toward the next cell
+	 * center.  When close enough, advance `pathIndex`.
+	 */
 	private followPath(guard: GuardEntity, dt: number): void {
 		if (guard.path.length === 0 || guard.pathIndex >= guard.path.length) return;
 
@@ -427,20 +532,30 @@ export class GameEngine {
 
 		moveToward(guard.pos, target, guard.speed, dt);
 
+		// Update the guard's facing direction based on movement.
 		if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
 			guard.facing = angleToFacing(Math.atan2(dy, dx));
 		}
 	}
 
+	/** True when the guard has exhausted or moved past its current path. */
 	private hasReachedPathEnd(guard: GuardEntity): boolean {
 		return guard.path.length === 0 || guard.pathIndex >= guard.path.length;
 	}
 
+	/** Snap the guard's pixel position to the center of the cell it currently occupies. */
 	private snapGuardToCell(guard: GuardEntity): void {
 		const cell = pixelToCell(guard.pos.x, guard.pos.y);
 		guard.pos = cellCenter(cell);
 	}
 
+	// --- Pathfinding dispatch -----------------------------------------------
+
+	/**
+	 * Compute a path from the guard's current cell to `goal` using the
+	 * currently selected algorithm (A\* or BFS).  The guard's
+	 * `nodesExplored` accumulator and the engine-wide total are both updated.
+	 */
 	private setPathTo(guard: GuardEntity, goal: Position): void {
 		const start = pixelToCell(guard.pos.x, guard.pos.y);
 		if (start.x === goal.x && start.y === goal.y) {
@@ -450,15 +565,14 @@ export class GameEngine {
 		}
 
 		const result =
-			this.algorithm === 'astar'
-				? aStar(this.grid, start, goal, true)
-				: bfs(this.grid, start, goal);
+			this.algorithm === 'astar' ? aStar(this.grid, start, goal) : bfs(this.grid, start, goal);
 
 		guard.nodesExplored += result.nodesExplored;
 		this.totalNodesExplored += result.nodesExplored;
 
 		if (result.path.length > 0) {
 			guard.path = result.path;
+			// Skip the first cell if it's the one we're already standing in.
 			guard.pathIndex = result.path[0].x === start.x && result.path[0].y === start.y ? 1 : 0;
 		} else {
 			guard.path = [];
@@ -466,6 +580,11 @@ export class GameEngine {
 		}
 	}
 
+	/**
+	 * Pick a random walkable cell near `lastKnownPlayerPos` (±2 cells)
+	 * and path toward it.  This gives the SEARCH behaviour a natural
+	 * "sweep the area" feel.
+	 */
 	private pickSearchTarget(guard: GuardEntity): void {
 		if (!guard.lastKnownPlayerPos) {
 			this.setPathTo(guard, guard.patrolRoute[guard.patrolIndex]);
@@ -485,7 +604,7 @@ export class GameEngine {
 					ny < this.grid.length &&
 					nx >= 0 &&
 					nx < this.grid[0].length &&
-					this.grid[ny][nx] !== CellType.WALL
+					this.grid[ny][nx] === CellType.EMPTY // SEARCH only targets open cells
 				) {
 					candidates.push({ x: nx, y: ny });
 				}
@@ -498,6 +617,9 @@ export class GameEngine {
 		}
 	}
 
+	// --- Keycard collection -------------------------------------------------
+
+	/** If the player stands on an uncollected keycard cell, collect it. */
 	private checkKeycardCollection(): void {
 		const pc = this.getPlayerCell();
 		for (const k of this.keycards) {
@@ -510,6 +632,12 @@ export class GameEngine {
 		}
 	}
 
+	// --- Win / lose ---------------------------------------------------------
+
+	/**
+	 * - Lose: the player shares a cell with a guard that is actively CHASING.
+	 * - Win: the player reaches the exit with all keycards collected.
+	 */
 	private checkWinLose(): void {
 		const pc = this.getPlayerCell();
 
@@ -518,7 +646,6 @@ export class GameEngine {
 			if (pc.x === gc.x && pc.y === gc.y && guard.state === GuardState.CHASE) {
 				this.gameOver = true;
 				this.won = false;
-				// this.showMessage('CAUGHT! Press R to restart.');
 				return;
 			}
 		}
@@ -527,18 +654,21 @@ export class GameEngine {
 			if (this.collectedCount >= this.totalKeycards) {
 				this.gameOver = true;
 				this.won = true;
-				// this.showMessage('MISSION COMPLETE! Press R to restart.');
 			} else if (this.message !== 'Collect all keycards first!') {
 				this.showMessage('Collect all keycards first!');
 			}
 		}
 	}
 
+	// --- Message system -----------------------------------------------------
+
+	/** Display a temporary on-screen message that fades after 2 seconds. */
 	private showMessage(msg: string): void {
 		this.message = msg;
 		this.messageTimer = 2.0;
 	}
 
+	/** Decrement the message timer; clear the message when it expires (unless game over). */
 	private updateMessageTimer(dt: number): void {
 		if (this.messageTimer > 0) {
 			this.messageTimer -= dt;
@@ -548,12 +678,16 @@ export class GameEngine {
 		}
 	}
 
+	// --- Collision / utilities ----------------------------------------------
+
+	/** True if the cell at (x, y) is inside the grid and not a wall or cover. */
 	private isWalkable(x: number, y: number): boolean {
 		if (y < 0 || y >= this.grid.length || x < 0 || x >= this.grid[0].length) return false;
 		const cell = this.grid[y][x];
 		return cell !== CellType.WALL && cell !== CellType.COVER;
 	}
 
+	/** Return the grid-cell coordinates the player's center occupies. */
 	private getPlayerCell(): Position {
 		return pixelToCell(this.playerPos.x, this.playerPos.y);
 	}

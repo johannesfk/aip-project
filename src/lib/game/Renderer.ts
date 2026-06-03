@@ -1,3 +1,19 @@
+// ---------------------------------------------------------------------------
+// Renderer — Canvas 2D rendering for the Stealth Patrol game
+// ---------------------------------------------------------------------------
+// Draw order (back to front):
+//   1. Background fill
+//   2. Floor tiles + grid lines
+//   3. Walls & cover (terrain)
+//   4. Keycards (pulsing collectibles)
+//   5. Exit (changes state when all keycards are collected)
+//   6. Guard paths / vision cones / hearing radii (debug toggles)
+//   7. Guard bodies + state indicators
+//   8. Player
+//   9. UI overlay (HUD + messages)
+//  10. Pause / game-over overlay
+// ---------------------------------------------------------------------------
+
 import {
 	CellType,
 	Direction,
@@ -5,12 +21,13 @@ import {
 	type GameState,
 	type GuardEntity,
 	type KeycardState,
-	type Position,
 	CELL_SIZE,
 	GRID_WIDTH,
 	GRID_HEIGHT,
 	GUARD_HEARING_SPRINT_RANGE
 } from './types';
+
+// ---- Color palette ---------------------------------
 
 const COLORS = {
 	bg: '#0a0a1a',
@@ -38,10 +55,13 @@ const COLORS = {
 	pathLine: 'rgba(255, 82, 82, 0.4)',
 	uiText: '#e0e0e0',
 	uiBg: 'rgba(0, 0, 0, 0.7)',
-	overlayBg: 'rgba(0, 0, 0, 0.1)',
+	overlayBg: 'rgba(0, 0, 0, 0.2)',
 	messageText: '#ffffff'
 };
 
+// ---- Helpers --------------------------------------------------------------
+
+/** Convert a cardinal direction to a radian angle (right = 0, CCW). */
 function facingToAngle(facing: Direction): number {
 	switch (facing) {
 		case Direction.RIGHT:
@@ -55,11 +75,15 @@ function facingToAngle(facing: Direction): number {
 	}
 }
 
+// ---- Renderer class -------------------------------------------------------
+
 export class Renderer {
 	private ctx: CanvasRenderingContext2D;
 	private grid: CellType[][];
 	private width: number;
 	private height: number;
+
+	/** Elapsed time accumulator used for pulsing animations (keycards, hearing). */
 	private time: number = 0;
 
 	constructor(ctx: CanvasRenderingContext2D, grid: CellType[][]) {
@@ -69,6 +93,12 @@ export class Renderer {
 		this.height = GRID_HEIGHT * CELL_SIZE;
 	}
 
+	/**
+	 * Draw a complete frame.
+	 *
+	 * @param state Deep-cloned game snapshot (read-only for the renderer).
+	 * @param dt    Delta time since last frame (seconds).
+	 */
 	render(state: GameState, dt: number): void {
 		this.time += dt;
 		const ctx = this.ctx;
@@ -85,6 +115,7 @@ export class Renderer {
 		this.drawPlayer(state);
 		this.drawUI(state);
 
+		// Overlays — only one at a time: pause takes priority over game-over.
 		if (state.paused) {
 			this.drawPauseOverlay();
 		} else if (state.gameOver) {
@@ -92,6 +123,9 @@ export class Renderer {
 		}
 	}
 
+	// ---- Terrain -----------------------------------------------------------
+
+	/** Fill every cell with the floor colour and draw thin grid lines. */
 	private drawGrid(): void {
 		const ctx = this.ctx;
 		for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -107,6 +141,7 @@ export class Renderer {
 		}
 	}
 
+	/** Iterate over the grid and draw every WALL and COVER cell. */
 	private drawWallsAndCover(): void {
 		for (let y = 0; y < GRID_HEIGHT; y++) {
 			for (let x = 0; x < GRID_WIDTH; x++) {
@@ -119,6 +154,7 @@ export class Renderer {
 		}
 	}
 
+	/** Dark solid block with a lighter inset border. */
 	private drawWall(x: number, y: number): void {
 		const ctx = this.ctx;
 		const px = x * CELL_SIZE;
@@ -130,6 +166,7 @@ export class Renderer {
 		ctx.strokeRect(px + 2, py + 2, CELL_SIZE - 4, CELL_SIZE - 4);
 	}
 
+	/** Similar to a wall but with a cross-hatch pattern to distinguish it visually. */
 	private drawCover(x: number, y: number): void {
 		const ctx = this.ctx;
 		const px = x * CELL_SIZE;
@@ -148,6 +185,9 @@ export class Renderer {
 		ctx.strokeRect(px + 2, py + 2, CELL_SIZE - 4, CELL_SIZE - 4);
 	}
 
+	// ---- Entities ----------------------------------------------------------
+
+	/** Pulsing yellow collectibles.  Collected keycards are hidden. */
 	private drawKeycards(keycards: KeycardState[]): void {
 		const ctx = this.ctx;
 		const pulse = Math.sin(this.time * 3) * 0.3 + 0.7;
@@ -175,6 +215,10 @@ export class Renderer {
 		}
 	}
 
+	/**
+	 * Draw the exit cell.  When all keycards are collected it glows bright
+	 * green and shows "EXIT"; otherwise it displays a locked "X".
+	 */
 	private drawExit(state: GameState): void {
 		const ctx = this.ctx;
 		const pos = state.exitPos;
@@ -205,6 +249,9 @@ export class Renderer {
 		}
 	}
 
+	// ---- Guards ------------------------------------------------------------
+
+	/** Draw debug overlays first (behind the guard body), then the guard itself. */
 	private drawGuards(state: GameState): void {
 		for (const guard of state.guards) {
 			if (state.showPaths) this.drawPath(guard);
@@ -215,6 +262,7 @@ export class Renderer {
 		}
 	}
 
+	/** Red diamond body with a white "eye" indicating facing direction. */
 	private drawGuardBody(guard: GuardEntity): void {
 		const ctx = this.ctx;
 		const px = guard.pos.x;
@@ -242,6 +290,13 @@ export class Renderer {
 		ctx.fill();
 	}
 
+	/**
+	 * Coloured dot + ring above the guard, matching the active FSM state:
+	 *   Green  = PATROL
+	 *   Yellow = ALERT
+	 *   Red    = CHASE
+	 *   Orange = SEARCH
+	 */
 	private drawStateIndicator(guard: GuardEntity): void {
 		const ctx = this.ctx;
 		const px = guard.pos.x;
@@ -270,6 +325,19 @@ export class Renderer {
 		ctx.globalAlpha = 1;
 	}
 
+	// ---- Vision cone (ray-cast, occlusion-aware) --------------------------
+
+	/**
+	 * Draw the guard's vision cone using raycasting so that walls and cover
+	 * cells physically block (occlude) the visible area.
+	 *
+	 * Algorithm:
+	 *   1. Cast `numRays` rays at evenly spaced angles across the vision arc.
+	 *   2. Step each ray forward by `stepSize` until it either hits a blocking
+	 *      cell (WALL or COVER) or reaches `maxDist`.
+	 *   3. Collect the endpoints and build a filled polygon: guard → endpoints → guard.
+	 *   4. Stroke the polygon outline for clarity.
+	 */
 	private drawVisionCone(guard: GuardEntity): void {
 		const ctx = this.ctx;
 		const gx = guard.pos.x;
@@ -303,7 +371,7 @@ export class Renderer {
 
 				const cell = this.grid[cy][cx];
 				if (cell === CellType.WALL || cell === CellType.COVER) {
-					// Step back to just before the blocking cell
+					// Step back to just before the blocking cell.
 					dist = Math.max(0, dist - stepSize);
 					blocked = true;
 					break;
@@ -312,10 +380,7 @@ export class Renderer {
 
 			if (!blocked) dist = maxDist;
 
-			endpoints.push({
-				x: gx + dx * dist,
-				y: gy + dy * dist,
-			});
+			endpoints.push({ x: gx + dx * dist, y: gy + dy * dist });
 		}
 
 		ctx.fillStyle = COLORS.visionCone;
@@ -332,6 +397,12 @@ export class Renderer {
 		ctx.stroke();
 	}
 
+	// ---- Hearing radius ---------------------------------------------------
+
+	/**
+	 * Solid circle at the base hearing range, plus a pulsing outer ring
+	 * when the player is sprinting (extended range).
+	 */
 	private drawHearingRadius(guard: GuardEntity, playerSprinting: boolean): void {
 		const ctx = this.ctx;
 		const rangePx = guard.hearingRange * CELL_SIZE;
@@ -354,11 +425,15 @@ export class Renderer {
 		}
 	}
 
+	// ---- Path visualization -----------------------------------------------
+
+	/** Draw the guard's planned path as a dotted line with cell-center dots. */
 	private drawPath(guard: GuardEntity): void {
 		const ctx = this.ctx;
 		const path = guard.path;
 		if (path.length === 0 || guard.pathIndex >= path.length) return;
 
+		// Draw dots at each remaining cell center.
 		ctx.fillStyle = COLORS.pathLine;
 		for (let i = guard.pathIndex; i < path.length; i++) {
 			const cx = path[i].x * CELL_SIZE + CELL_SIZE / 2;
@@ -368,6 +443,7 @@ export class Renderer {
 			ctx.fill();
 		}
 
+		// Draw a dashed line from the guard's current position.
 		if (path.length > guard.pathIndex) {
 			ctx.strokeStyle = COLORS.pathLine;
 			ctx.lineWidth = 1;
@@ -384,6 +460,9 @@ export class Renderer {
 		}
 	}
 
+	// ---- Player ------------------------------------------------------------
+
+	/** Blue circle with a subtle sprint trail and a specular highlight. */
 	private drawPlayer(state: GameState): void {
 		const ctx = this.ctx;
 		const px = state.playerPos.x;
@@ -411,16 +490,21 @@ export class Renderer {
 		ctx.fill();
 	}
 
+	// ---- HUD ---------------------------------------------------------------
+
+	/** Draw the persistent in-game UI: keycard counter, algorithm label, controls hint, messages. */
 	private drawUI(state: GameState): void {
 		const ctx = this.ctx;
 		const padding = 10;
 
+		// Keycard counter (top-left).
 		ctx.fillStyle = COLORS.uiText;
 		ctx.font = 'bold 13px monospace';
 		ctx.textAlign = 'left';
 		ctx.textBaseline = 'top';
 		ctx.fillText(`Keycards: ${state.collectedCount}/${state.totalKeycards}`, padding, padding);
 
+		// Algorithm + node counter (top-right).
 		ctx.textAlign = 'right';
 		ctx.fillText(
 			`Algo: ${state.algorithm.toUpperCase()} | Nodes: ${state.nodesExplored}`,
@@ -428,6 +512,7 @@ export class Renderer {
 			padding
 		);
 
+		// Controls hint (bottom center).
 		if (!state.gameOver) {
 			ctx.textAlign = 'center';
 			ctx.fillStyle = 'rgba(224, 224, 224, 0.8)';
@@ -439,6 +524,7 @@ export class Renderer {
 			);
 		}
 
+		// Transient message (e.g., "Keycard collected!").
 		if (state.message) {
 			ctx.fillStyle = COLORS.messageText;
 			ctx.globalAlpha = 0.95;
@@ -450,6 +536,9 @@ export class Renderer {
 		}
 	}
 
+	// ---- Overlays ----------------------------------------------------------
+
+	/** Semi-transparent overlay shown when the game is paused. */
 	private drawPauseOverlay(): void {
 		const ctx = this.ctx;
 		ctx.fillStyle = COLORS.overlayBg;
@@ -465,6 +554,7 @@ export class Renderer {
 		ctx.fillText('Press Esc to resume', this.width / 2, this.height / 2 + 20);
 	}
 
+	/** Full-screen overlay for win / lose. */
 	private drawOverlay(state: GameState): void {
 		const ctx = this.ctx;
 		ctx.fillStyle = COLORS.overlayBg;
