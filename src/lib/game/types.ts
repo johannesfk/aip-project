@@ -21,7 +21,7 @@ export const GRID_HEIGHT = 20;
 export enum CellType {
 	EMPTY = 0,
 	WALL = 1,
-	COVER = 2,
+	COVER = 2
 }
 
 /** Cardinal direction the guard is currently looking toward. */
@@ -29,7 +29,7 @@ export enum Direction {
 	UP = 'UP',
 	DOWN = 'DOWN',
 	LEFT = 'LEFT',
-	RIGHT = 'RIGHT',
+	RIGHT = 'RIGHT'
 }
 
 /**
@@ -50,7 +50,7 @@ export enum GuardState {
 	/** Pursue the player via A\* / BFS pathfinding at high speed. */
 	CHASE = 'CHASE',
 	/** Wander near the last-known position before giving up and returning to PATROL. */
-	SEARCH = 'SEARCH',
+	SEARCH = 'SEARCH'
 }
 
 /** Grid- or pixel-space coordinate. */
@@ -129,6 +129,8 @@ export interface GuardDef {
 
 /** Static level data loaded once at startup. */
 export interface LevelData {
+	/** Display name for the level (shown in menus). */
+	name: string;
 	/** 2-D grid of `CellType` values (row-major). */
 	grid: CellType[][];
 	/** Grid cell where the player spawns. */
@@ -164,7 +166,6 @@ export interface GameState {
 	totalKeycards: number;
 	gameOver: boolean;
 	won: boolean;
-	paused: boolean;
 	message: string;
 	showVisionCones: boolean;
 	showHearingRadius: boolean;
@@ -182,7 +183,7 @@ export const DIRECTION_VECTORS: Record<Direction, Position> = {
 	[Direction.UP]: { x: 0, y: -1 },
 	[Direction.DOWN]: { x: 0, y: 1 },
 	[Direction.LEFT]: { x: -1, y: 0 },
-	[Direction.RIGHT]: { x: 1, y: 0 },
+	[Direction.RIGHT]: { x: 1, y: 0 }
 };
 
 /** Player base movement speed (px/s). */
@@ -196,7 +197,7 @@ export const GUARD_SPEEDS: Record<GuardState, number> = {
 	[GuardState.PATROL]: 50,
 	[GuardState.ALERT]: 75,
 	[GuardState.CHASE]: 105,
-	[GuardState.SEARCH]: 45,
+	[GuardState.SEARCH]: 45
 };
 
 /** How far the guard can see (grid cells, Euclidean). */

@@ -115,10 +115,8 @@ export class Renderer {
 		this.drawPlayer(state);
 		this.drawUI(state);
 
-		// Overlays — only one at a time: pause takes priority over game-over.
-		if (state.paused) {
-			this.drawPauseOverlay();
-		} else if (state.gameOver) {
+		// Overlays — game-over handled by Svelte UI, kept here as fallback.
+		if (state.gameOver) {
 			this.drawOverlay(state);
 		}
 	}
@@ -537,22 +535,6 @@ export class Renderer {
 	}
 
 	// ---- Overlays ----------------------------------------------------------
-
-	/** Semi-transparent overlay shown when the game is paused. */
-	private drawPauseOverlay(): void {
-		const ctx = this.ctx;
-		ctx.fillStyle = COLORS.overlayBg;
-		ctx.fillRect(0, 0, this.width, this.height);
-
-		ctx.fillStyle = COLORS.uiText;
-		ctx.font = 'bold 36px monospace';
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.fillText('PAUSED', this.width / 2, this.height / 2 - 20);
-
-		ctx.font = '14px monospace';
-		ctx.fillText('Press Esc to resume', this.width / 2, this.height / 2 + 20);
-	}
 
 	/** Full-screen overlay for win / lose. */
 	private drawOverlay(state: GameState): void {

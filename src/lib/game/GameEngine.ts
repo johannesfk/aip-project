@@ -93,7 +93,7 @@ function bresenhamLine(from: Position, to: Position): Position[] {
 	const sy = y0 < y1 ? 1 : -1;
 	let err = dx - dy;
 
-	while (x0 === x1 && y0 === y1) {
+	while (x0 !== x1 || y0 !== y1) {
 		const e2 = 2 * err;
 		if (e2 > -dy) {
 			err -= dy;
@@ -133,7 +133,6 @@ export class GameEngine {
 	showVisionCones: boolean = true;
 	showHearingRadius: boolean = true;
 	showPaths: boolean = true;
-	paused: boolean = false;
 
 	/** Which pathfinding algorithm guards use this frame.  Toggled with T. */
 	algorithm: 'astar' | 'bfs' = 'astar';
@@ -193,8 +192,8 @@ export class GameEngine {
 			return this.getState();
 		}
 
-		// Paused or game-over: freeze the world, only tick the message timer.
-		if (this.paused || this.gameOver) {
+		// Game-over: freeze the world, only tick the message timer.
+		if (this.gameOver) {
 			this.updateMessageTimer(dt);
 			return this.getState();
 		}
@@ -220,7 +219,6 @@ export class GameEngine {
 			totalKeycards: this.totalKeycards,
 			gameOver: this.gameOver,
 			won: this.won,
-			paused: this.paused,
 			message: this.message,
 			showVisionCones: this.showVisionCones,
 			showHearingRadius: this.showHearingRadius,

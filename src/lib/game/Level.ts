@@ -1,111 +1,221 @@
 // ---------------------------------------------------------------------------
-// Level — Procedural grid generation and entity placement
+// Level — Multi-level map parser and level definitions
 // ---------------------------------------------------------------------------
-// The level is a 30×20 grid divided into three horizontal zones separated
-// by walls with deliberate gaps.  Three guards patrol one zone each, five
-// keycards are scattered across the map, and the exit is tucked into the
-// bottom-right corner behind the third zone.
+// Levels are authored as 20×30 string arrays where each character is:
+//   `#` = WALL   (blocks movement and vision)
+//   `.` = EMPTY  (walkable, does not block vision)
+//   `C` = COVER  (blocks movement and vision — impassable obstacle)
+//
+// Entity placements (player spawn, guards, keycards, exit) are specified
+// separately so that maps remain visually clean.
 // ---------------------------------------------------------------------------
 
 import { CellType, Direction, type LevelData, type Position, type GuardDef } from './types';
 
-/**
- * Build the 30 × 20 grid programmatically.
- *
- * Layout:
- *  - Border walls on all four edges.
- *  - Two horizontal dividing walls at rows 8 and 13, each with intentional
- *    gaps that the player must pass through.
- *  - A handful of interior COVER pillars that create interesting line-of-sight
- *    puzzles.
- */
-function buildGrid(): CellType[][] {
-	const H = 20;
-	const W = 30;
-	const grid: CellType[][] = [];
+const H = 20;
+const W = 30;
 
+/** Parse a 20×30 string array into a `CellType` grid.  Any character that is
+ *  not `.` or `C` is treated as WALL. */
+function parseMap(rows: string[]): CellType[][] {
+	const grid: CellType[][] = [];
 	for (let y = 0; y < H; y++) {
-		const row: CellType[] = [];
+		const row = rows[y] ?? '#'.repeat(W);
+		const cells: CellType[] = [];
 		for (let x = 0; x < W; x++) {
-			if (y === 0 || y === H - 1 || x === 0 || x === W - 1) {
-				row.push(CellType.WALL); // Border
-			} else if (y === 8 && (x < 13 || x > 16)) {
-				row.push(CellType.WALL); // Upper dividing wall (gap at columns 13-16)
-			} else if (y === 13 && x !== 4 && x !== 5 && x !== 6 && x !== 24 && x !== 25 && x !== 26) {
-				row.push(CellType.WALL); // Lower dividing wall (gaps at 4-6 and 24-26)
-			}
-			// COVER pillars — block both movement and vision
-			else if ((y === 4 || y === 5) && (x === 8 || x === 9 || x === 21)) {
-				row.push(CellType.COVER); // Top-zone pillars
-			} else if (y === 10 && (x === 9 || x === 20)) {
-				row.push(CellType.COVER); // Middle-zone pillars
-			} else if (y === 15 && x === 14) {
-				row.push(CellType.COVER); // Bottom-zone pillar
-			} else {
-				row.push(CellType.EMPTY);
-			}
+			const ch = row[x] ?? '#';
+			if (ch === '.') cells.push(CellType.EMPTY);
+			else if (ch === 'C') cells.push(CellType.COVER);
+			else cells.push(CellType.WALL);
 		}
-		grid.push(row);
+		grid.push(cells);
 	}
 	return grid;
 }
 
-/**
- * Assemble the complete level definition: grid, player spawn, keycards,
- * exit, and three guard patrol routes.
- */
-export function createLevel(): LevelData {
-	const grid = buildGrid();
+export const TOTAL_LEVELS = 10;
 
+export const LEVEL_NAMES: string[] = [
+	'Level 1',
+	'Level 2',
+	'Level 3',
+	'Level 4',
+	'Level 5',
+	'Level 6',
+	'Level 7',
+	'Level 8',
+	'Level 9',
+	'Level 10'
+];
+
+// ========================================================================
+// Level 1 — Three horizontal rooms (original layout)
+// ========================================================================
+function level1(): LevelData {
+	const map = [
+		// 0         1         2
+		// 012345678901234567890123456789
+		'##############################', // 0
+		'#............................#', // 1
+		'#............................#', // 2
+		'#............................#', // 3
+		'#.......CC...........C.......#', // 4
+		'#.......C............C.......#', // 5
+		'#............................#', // 6
+		'#............................#', // 7
+		'############....##############', // 8
+		'#............................#', // 9
+		'#......C............C........#', // 10
+		'#...................C........#', // 11
+		'#............................#', // 12
+		'####...#################...###', // 13
+		'#............................#', // 14
+		'#.............C..............#', // 15
+		'#............................#', // 16
+		'#............................#', // 17
+		'#............................#', // 18
+		'##############################' // 19
+	];
+	const grid = parseMap(map);
 	const playerStart: Position = { x: 2, y: 2 };
-
-	// Five keycards spread across all three zones.
 	const keycardPositions: Position[] = [
 		{ x: 6, y: 3 },
 		{ x: 24, y: 3 },
 		{ x: 15, y: 10 },
 		{ x: 5, y: 16 },
-		{ x: 26, y: 16 },
+		{ x: 26, y: 16 }
 	];
-
 	const exitPos: Position = { x: 27, y: 18 };
-
-	// Each guard patrols a rectangular loop within its own zone.
 	const guardDefs: GuardDef[] = [
 		{
-			// Top zone (rows 1-7)
 			pos: { x: 20, y: 6 },
 			facing: Direction.RIGHT,
 			patrolRoute: [
 				{ x: 3, y: 3 },
 				{ x: 27, y: 3 },
 				{ x: 27, y: 6 },
-				{ x: 3, y: 6 },
-			],
+				{ x: 3, y: 6 }
+			]
 		},
 		{
-			// Middle zone (rows 9-12)
 			pos: { x: 15, y: 10 },
 			facing: Direction.RIGHT,
 			patrolRoute: [
 				{ x: 3, y: 10 },
 				{ x: 27, y: 10 },
 				{ x: 27, y: 11 },
-				{ x: 3, y: 11 },
-			],
+				{ x: 3, y: 11 }
+			]
 		},
 		{
-			// Bottom zone (rows 14-18)
 			pos: { x: 3, y: 15 },
 			facing: Direction.RIGHT,
 			patrolRoute: [
 				{ x: 3, y: 15 },
 				{ x: 27, y: 15 },
 				{ x: 27, y: 17 },
-				{ x: 3, y: 17 },
-			],
-		},
+				{ x: 3, y: 17 }
+			]
+		}
 	];
+	return { name: LEVEL_NAMES[0], grid, playerStart, guardDefs, keycardPositions, exitPos };
+}
 
-	return { grid, playerStart, guardDefs, keycardPositions, exitPos };
+// ========================================================================
+// Level 2 — Open courtyard with scattered cover pillars
+// ========================================================================
+function level2(): LevelData {
+	const map = [
+		'##############################',
+		'#............................#',
+		'#......C.........C...........#',
+		'#......C.........C...........#',
+		'#............................#',
+		'#............................#',
+		'#............................#',
+		'#............................#',
+		'#......C.........C...........#',
+		'#......C.........C...........#',
+		'#............................#',
+		'#............................#',
+		'#............................#',
+		'#......C.........C...........#',
+		'#......C.........C...........#',
+		'#............................#',
+		'#............................#',
+		'#............................#',
+		'#............................#',
+		'##############################'
+	];
+	const grid = parseMap(map);
+	const playerStart: Position = { x: 2, y: 2 };
+	const keycardPositions: Position[] = [
+		{ x: 27, y: 2 },
+		{ x: 2, y: 18 }
+	];
+	const exitPos: Position = { x: 27, y: 18 };
+	const guardDefs: GuardDef[] = [
+		{
+			pos: { x: 15, y: 10 },
+			facing: Direction.RIGHT,
+			patrolRoute: [
+				{ x: 5, y: 10 },
+				{ x: 25, y: 10 }
+			]
+		}
+	];
+	return { name: LEVEL_NAMES[1], grid, playerStart, guardDefs, keycardPositions, exitPos };
+}
+
+// ========================================================================
+// Placeholder levels 3–10 — minimal open box so the menu & progression
+// system can be tested before the real maps are designed.
+// ========================================================================
+function placeholderLevel(index: number): LevelData {
+	const map: string[] = [];
+	for (let y = 0; y < H; y++) {
+		if (y === 0 || y === H - 1) {
+			map.push('#'.repeat(W));
+		} else {
+			map.push('#' + '.'.repeat(W - 2) + '#');
+		}
+	}
+	const grid = parseMap(map);
+	const playerStart: Position = { x: 2, y: 2 };
+	const keycardPositions: Position[] = [{ x: 27, y: 2 }];
+	const exitPos: Position = { x: 27, y: 18 };
+	const guardDefs: GuardDef[] = [];
+	return {
+		name: LEVEL_NAMES[index] ?? `Level ${index + 1}`,
+		grid,
+		playerStart,
+		guardDefs,
+		keycardPositions,
+		exitPos
+	};
+}
+
+const levelBuilders: (() => LevelData)[] = [
+	level1,
+	level2,
+	() => placeholderLevel(2),
+	() => placeholderLevel(3),
+	() => placeholderLevel(4),
+	() => placeholderLevel(5),
+	() => placeholderLevel(6),
+	() => placeholderLevel(7),
+	() => placeholderLevel(8),
+	() => placeholderLevel(9)
+];
+
+/**
+ * Build a `LevelData` instance for the given zero-based index.
+ *
+ * @throws if the index is out of range (`0` to `TOTAL_LEVELS - 1`).
+ */
+export function createLevel(index: number): LevelData {
+	if (index < 0 || index >= TOTAL_LEVELS) {
+		throw new Error(`Level index ${index} out of range (0–${TOTAL_LEVELS - 1})`);
+	}
+	return levelBuilders[index]();
 }

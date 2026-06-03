@@ -13,7 +13,6 @@ npx sv create my-app
 
 To recreate this project with the same configuration:
 
-
 ## Developing
 
 Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
