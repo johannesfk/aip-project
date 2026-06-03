@@ -272,23 +272,63 @@ export class Renderer {
 
 	private drawVisionCone(guard: GuardEntity): void {
 		const ctx = this.ctx;
+		const gx = guard.pos.x;
+		const gy = guard.pos.y;
 		const angle = facingToAngle(guard.facing);
 		const halfAngle = (guard.visionAngle * Math.PI) / 360;
-		const range = guard.visionRange * CELL_SIZE;
+		const maxDist = guard.visionRange * CELL_SIZE;
+		const numRays = 48;
+
+		const endpoints: { x: number; y: number }[] = [];
+		const stepSize = CELL_SIZE * 0.4;
+
+		for (let i = 0; i <= numRays; i++) {
+			const rayAngle = angle - halfAngle + (2 * halfAngle * i) / numRays;
+			const dx = Math.cos(rayAngle);
+			const dy = Math.sin(rayAngle);
+
+			let dist = 0;
+			let blocked = false;
+
+			while (dist < maxDist && !blocked) {
+				dist += stepSize;
+				const cx = Math.floor((gx + dx * dist) / CELL_SIZE);
+				const cy = Math.floor((gy + dy * dist) / CELL_SIZE);
+
+				if (cy < 0 || cy >= this.grid.length || cx < 0 || cx >= this.grid[0].length) {
+					dist -= stepSize;
+					blocked = true;
+					break;
+				}
+
+				const cell = this.grid[cy][cx];
+				if (cell === CellType.WALL || cell === CellType.COVER) {
+					// Step back to just before the blocking cell
+					dist = Math.max(0, dist - stepSize);
+					blocked = true;
+					break;
+				}
+			}
+
+			if (!blocked) dist = maxDist;
+
+			endpoints.push({
+				x: gx + dx * dist,
+				y: gy + dy * dist,
+			});
+		}
 
 		ctx.fillStyle = COLORS.visionCone;
 		ctx.beginPath();
-		ctx.moveTo(guard.pos.x, guard.pos.y);
-		ctx.arc(guard.pos.x, guard.pos.y, range, angle - halfAngle, angle + halfAngle);
+		ctx.moveTo(gx, gy);
+		for (let i = 0; i < endpoints.length; i++) {
+			ctx.lineTo(endpoints[i].x, endpoints[i].y);
+		}
 		ctx.closePath();
 		ctx.fill();
 
 		ctx.strokeStyle = 'rgba(255, 82, 82, 0.25)';
 		ctx.lineWidth = 1;
-		ctx.beginPath();
-		ctx.moveTo(guard.pos.x, guard.pos.y);
-		ctx.arc(guard.pos.x, guard.pos.y, range, angle - halfAngle, angle + halfAngle);
-		ctx.closePath();
 		ctx.stroke();
 	}
 

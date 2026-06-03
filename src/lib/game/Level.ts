@@ -21,7 +21,7 @@ function buildGrid(): CellType[][] {
 				row.push(CellType.WALL);
 			}
 			// Some interior pillars for interesting LOS
-			else if (y === 4 && (x === 8 || x === 21)) {
+			else if ((y === 4 || y === 5) && (x === 8 || x === 9 || x === 21)) {
 				row.push(CellType.COVER);
 			} else if (y === 10 && (x === 9 || x === 20)) {
 				row.push(CellType.COVER);

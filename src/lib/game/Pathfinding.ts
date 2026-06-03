@@ -25,7 +25,8 @@ function getNeighbors(grid: CellType[][], pos: Position): Position[] {
 			ny < grid.length &&
 			nx >= 0 &&
 			nx < grid[0].length &&
-			grid[ny][nx] !== CellType.WALL
+			grid[ny][nx] !== CellType.WALL &&
+			grid[ny][nx] !== CellType.COVER
 		) {
 			result.push({ x: nx, y: ny });
 		}

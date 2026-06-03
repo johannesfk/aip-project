@@ -550,7 +550,8 @@ export class GameEngine {
 
 	private isWalkable(x: number, y: number): boolean {
 		if (y < 0 || y >= this.grid.length || x < 0 || x >= this.grid[0].length) return false;
-		return this.grid[y][x] !== CellType.WALL;
+		const cell = this.grid[y][x];
+		return cell !== CellType.WALL && cell !== CellType.COVER;
 	}
 
 	private getPlayerCell(): Position {
