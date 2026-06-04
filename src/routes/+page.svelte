@@ -24,7 +24,7 @@
 		<div class="w-60 rounded-lg border border-slate-800 bg-slate-900 p-4 text-left">
 			<h2 class="mb-2 font-mono text-base font-medium text-slate-200">A* Pathfinding</h2>
 			<p class="m-0 text-sm leading-relaxed text-gray-300">
-				Guards navigate the grid using the A* algorithm with Manhattan heuristic. Toggle between <strong
+				Guards navigate the grid using the A* algorithm with Chebyshev heuristic. Toggle between <strong
 					class="text-sky-400">A*</strong
 				>
 				and <strong class="text-sky-400">BFS</strong> in-game to compare node exploration counts in real-time.
@@ -61,13 +61,13 @@
 		<p>
 			<strong>Toggle:</strong>
 			<kbd>T</kbd>
-			(A*/BFS),
+			A*/BFS,
 			<kbd>V</kbd>
-			(vision cones),
+			vision cones,
 			<kbd>H</kbd>
-			(hearing),
+			hearing,
 			<kbd>P</kbd>
-			(paths).
+			paths.
 		</p>
 	</div>
 </div>
