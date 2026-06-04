@@ -35,12 +35,21 @@ export enum Direction {
 /**
  * The four states of the guard Finite State Machine.
  *
- * ```
- * PATROL ──(see/hear)──▶ ALERT ──(confirm sight)──▶ CHASE
- *    ▲                       │                          │
- *    └──(timer)── SEARCH ◀──┘                          │
- *                           (lose sight + timer) ───────┘
- * ```
+ * Transitions per state:
+ *
+ *   PATROL  ──(see)──────────────> CHASE
+ *           ──(hear)─────────────> ALERT
+ *
+ *   ALERT   ──(see)──────────────> CHASE
+ *           ──(hear)─────────────> ALERT  (redirect toward new sound)
+ *           ──(timer ≥3s)────────> PATROL
+ *
+ *   CHASE   ──(lose sight ≥2s)───> SEARCH
+ *           ──(see)──────────────> CHASE  (re-path to player every frame)
+ *
+ *   SEARCH  ──(see)──────────────> CHASE
+ *           ──(hear)─────────────> ALERT
+ *           ──(timer ≥5s)────────> PATROL
  */
 export enum GuardState {
 	/** Follow a predefined set of waypoints at slow speed. */
@@ -223,6 +232,3 @@ export const CHASE_LOSE_SIGHT_TIME = 2.0;
 
 /** Seconds the guard spends wandering in SEARCH before returning to PATROL. */
 export const SEARCH_DURATION = 5.0;
-
-/** Seconds the guard pauses after reaching the ALERT investigation point. */
-export const ALERT_PAUSE_TIME = 0.8;

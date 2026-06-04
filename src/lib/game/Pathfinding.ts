@@ -101,8 +101,8 @@ export interface PathResult {
 /**
  * A\* search on a uniform-cost 8-connected grid.
  *
- * Uses the Chebyshev distance as an admissible heuristic.  The open set
- * is managed with a linear scan (sufficient for a 30×20 grid).
+ * Uses the Chebyshev distance as an admissible heuristic.
+ * The open set is managed with a linear scan.
  */
 export function aStar(grid: CellType[][], start: Position, goal: Position): PathResult {
 	// f(n) = g(n) + h(n)

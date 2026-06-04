@@ -363,20 +363,7 @@ export class GameEngine {
 	 * Transitions are driven by three sensing queries every frame:
 	 *  1. `canSeePlayer` — vision-cone + line-of-sight check.
 	 *  2. `canHearPlayer` — proximity check (amplified when sprinting).
-	 *  3. Timer thresholds (lose-sight, search-duration, alert-pause).
-	 *
-	 * State diagram:
-	 * ```
-	 * PATROL ──(see)───────▶ CHASE
-	 *    │                    │ (lose sight >2s)
-	 *    │ (hear)             ▼
-	 *    ├──────────────▶ SEARCH ──(timer 5s)──▶ PATROL
-	 *    │                    │ (see/hear)
-	 *    ▼                    ▼
-	 *  ALERT ──(see)──────▶ CHASE
-	 *    │
-	 *    └──(reach target + pause 0.8s)──▶ PATROL
-	 * ```
+	 *  3. Timer thresholds (lose-sight, search-duration, alert-timeout).
 	 */
 	private updateGuardState(guard: GuardEntity, dt: number): void {
 		const canSee = this.canSeePlayer(guard);
