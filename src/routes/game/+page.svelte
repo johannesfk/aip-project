@@ -408,50 +408,59 @@
 	<title>Stealth Patrol — AI Game</title>
 </svelte:head>
 
-<div class="game-wrapper">
+<div class="relative flex min-h-screen items-center justify-center bg-slate-950">
 	<canvas
 		bind:this={canvas}
 		width={GRID_WIDTH * CELL_SIZE}
 		height={GRID_HEIGHT * CELL_SIZE}
-		class="game-canvas"
+		class="border border-indigo-950 shadow-[0_0_40px_rgba(30,30,100,0.3)] [image-rendering:pixelated]"
 	></canvas>
 
 	{#if currentScreen === 'menu'}
-		<div class="overlay menu-overlay">
-			<h1 class="title">Stealth Patrol</h1>
-			<p class="subtitle">Select a level</p>
-			<div class="level-grid">
-				{#each LEVEL_NAMES as name, i (i)}
+		<div
+			class="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-950 text-white"
+		>
+			<h1 class="m-0 font-mono text-[2.5rem] font-bold text-sky-400">Stealth Patrol</h1>
+			<p class="m-0 mb-4 font-mono text-[1.1rem] text-slate-300">Select a level</p>
+			<div class="grid w-full max-w-[600px] grid-cols-5 gap-3 px-4">
+				{#each LEVEL_NAMES as _, i (i)}
 					<button
-						class="level-btn"
-						class:completed={completed[i]}
-						class:locked={i >= unlocked}
-						class:focused={focusedButtonIndex === i}
+						class="relative flex flex-col items-center justify-center rounded-md border border-indigo-900 bg-indigo-950 py-3 px-2 font-mono text-gray-200 transition-all duration-150 cursor-pointer enabled:hover:-translate-y-0.5 enabled:hover:border-sky-400 enabled:hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-40 {completed[
+							i
+						]
+							? 'border-emerald-300'
+							: ''} {focusedButtonIndex === i
+							? '-translate-y-px !border-sky-400 !bg-indigo-900 shadow-[0_0_10px] shadow-sky-400/50'
+							: ''}"
 						disabled={i >= unlocked}
 						onclick={() => startLevel(i)}
 						onmouseenter={() => {
 							focusedButtonIndex = i;
 						}}
 					>
-						<span class="level-number">{i + 1}</span>
-						<!-- Disable level name for now -->
-						<!-- <span class="level-name">{name}</span> -->
+						<span class="text-xl font-bold">{i + 1}</span>
 						{#if completed[i]}
-							<span class="check">✓</span>
+							<span class="absolute top-1 right-1.5 text-sm font-bold text-emerald-300">✓</span>
 						{/if}
 					</button>
 				{/each}
 			</div>
 		</div>
 	{:else if currentScreen === 'playing' && paused}
-		<div class="overlay pause-overlay">
-			<h2 class="end-title">Paused</h2>
-			<div class="btn-col">
+		<div
+			class="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-950/25 text-white"
+		>
+			<h2 class="m-0 font-mono text-[2rem] font-bold">Paused</h2>
+			<div class="flex min-w-[180px] flex-col gap-2">
 				{#each pauseActions as action, i (i)}
 					<button
-						class="btn"
-						class:primary={action.isPrimary}
-						class:focused={focusedButtonIndex === i}
+						class="cursor-pointer rounded border py-2.5 px-5 font-mono text-sm text-gray-200 transition-all duration-150 text-center hover:border-sky-400 {action.isPrimary
+							? 'border-slate-700 bg-slate-800 hover:bg-slate-700'
+							: 'border-indigo-900 bg-indigo-950 hover:bg-indigo-900'} {focusedButtonIndex === i
+							? action.isPrimary
+								? '-translate-y-px !border-sky-400 !bg-slate-700 shadow-[0_0_10px] shadow-sky-400/50'
+								: '-translate-y-px !border-sky-400 !bg-indigo-900 shadow-[0_0_10px] shadow-sky-400/50'
+							: ''}"
 						onclick={action.action}
 						onmouseenter={() => {
 							focusedButtonIndex = i;
@@ -461,18 +470,26 @@
 					</button>
 				{/each}
 			</div>
-			<p class="hint">Use Arrow keys / Enter to navigate</p>
+			<p class="mt-2 font-mono text-xs text-white">Use Arrow keys / Enter to navigate</p>
 		</div>
 	{:else if currentScreen === 'levelComplete'}
-		<div class="overlay end-overlay">
-			<h2 class="end-title success">Level Complete!</h2>
-			<p class="end-subtitle">{LEVEL_NAMES[currentLevelIndex]} finished</p>
-			<div class="btn-col">
+		<div
+			class="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-red-950/25 text-white"
+		>
+			<h2 class="m-0 font-mono text-[2rem] font-bold text-emerald-300">Level Complete!</h2>
+			<p class="m-0 font-mono text-base text-slate-400">
+				{LEVEL_NAMES[currentLevelIndex]} finished
+			</p>
+			<div class="flex min-w-[180px] flex-col gap-2">
 				{#each levelCompleteActions as action, i (i)}
 					<button
-						class="btn"
-						class:primary={action.isPrimary}
-						class:focused={focusedButtonIndex === i}
+						class="cursor-pointer rounded border py-2.5 px-5 font-mono text-sm text-gray-200 transition-all duration-150 text-center hover:border-sky-400 {action.isPrimary
+							? 'border-slate-700 bg-slate-800 hover:bg-slate-700'
+							: 'border-indigo-900 bg-indigo-950 hover:bg-indigo-900'} {focusedButtonIndex === i
+							? action.isPrimary
+								? '-translate-y-px !border-sky-400 !bg-slate-700 shadow-[0_0_10px] shadow-sky-400/50'
+								: '-translate-y-px !border-sky-400 !bg-indigo-900 shadow-[0_0_10px] shadow-sky-400/50'
+							: ''}"
 						onclick={action.action}
 						onmouseenter={() => {
 							focusedButtonIndex = i;
@@ -482,18 +499,24 @@
 					</button>
 				{/each}
 			</div>
-			<p class="hint">Use Arrow keys / Enter to navigate</p>
+			<p class="mt-2 font-mono text-xs text-white">Use Arrow keys / Enter to navigate</p>
 		</div>
 	{:else if currentScreen === 'gameOver'}
-		<div class="overlay end-overlay">
-			<h2 class="end-title failure">Caught!</h2>
-			<p class="end-subtitle">The guards spotted you.</p>
-			<div class="btn-col">
+		<div
+			class="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-red-950/25 text-white"
+		>
+			<h2 class="m-0 font-mono text-[2rem] font-bold text-red-400">Caught!</h2>
+			<p class="m-0 font-mono text-base text-slate-400">The guards spotted you.</p>
+			<div class="flex min-w-[180px] flex-col gap-2">
 				{#each gameOverActions as action, i (i)}
 					<button
-						class="btn"
-						class:primary={action.isPrimary}
-						class:focused={focusedButtonIndex === i}
+						class="cursor-pointer rounded border py-2.5 px-5 font-mono text-sm text-gray-200 transition-all duration-150 text-center hover:border-sky-400 {action.isPrimary
+							? 'border-slate-700 bg-slate-800 hover:bg-slate-700'
+							: 'border-indigo-900 bg-indigo-950 hover:bg-indigo-900'} {focusedButtonIndex === i
+							? action.isPrimary
+								? '-translate-y-px !border-sky-400 !bg-slate-700 shadow-[0_0_10px] shadow-sky-400/50'
+								: '-translate-y-px !border-sky-400 !bg-indigo-900 shadow-[0_0_10px] shadow-sky-400/50'
+							: ''}"
 						onclick={action.action}
 						onmouseenter={() => {
 							focusedButtonIndex = i;
@@ -503,201 +526,7 @@
 					</button>
 				{/each}
 			</div>
-			<p class="hint">Use Arrow keys / Enter to navigate</p>
+			<p class="mt-2 font-mono text-xs text-white">Use Arrow keys / Enter to navigate</p>
 		</div>
 	{/if}
 </div>
-
-<style>
-	.game-wrapper {
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		min-height: 100vh;
-		background: #050510;
-		position: relative;
-	}
-
-	.game-canvas {
-		border: 1px solid #1a1a3a;
-		box-shadow: 0 0 40px rgba(30, 30, 100, 0.3);
-		image-rendering: pixelated;
-	}
-
-	.overlay {
-		position: absolute;
-		inset: 0;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		gap: 1rem;
-		color: white;
-	}
-
-	.menu-overlay {
-		background: rgba(5, 5, 16, 1);
-	}
-
-	.pause-overlay {
-		background: rgba(5, 5, 16, 0.25);
-	}
-
-	.end-overlay {
-		background: rgba(60, 0, 0, 0.25);
-	}
-
-	.title {
-		font-size: 2.5rem;
-		font-weight: bold;
-		color: #4fc3f7;
-		margin: 0;
-		font-family: monospace;
-	}
-
-	.subtitle {
-		font-size: 1.1rem;
-		color: #a0a0c0;
-		margin: 0 0 1rem;
-		font-family: monospace;
-	}
-
-	.level-grid {
-		display: grid;
-		grid-template-columns: repeat(5, 1fr);
-		gap: 0.75rem;
-		max-width: 600px;
-		width: 100%;
-		padding: 0 1rem;
-	}
-
-	.level-btn {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		padding: 0.75rem 0.5rem;
-		background: #1a1a3a;
-		border: 1px solid #2a2a5a;
-		border-radius: 6px;
-		color: #e0e0e0;
-		cursor: pointer;
-		transition: all 0.15s ease;
-		font-family: monospace;
-		position: relative;
-	}
-
-	.level-btn:hover:not(:disabled) {
-		background: #2a2a5a;
-		border-color: #4fc3f7;
-		transform: translateY(-2px);
-	}
-
-	.level-btn.focused {
-		background: #2a2a5a;
-		border-color: #4fc3f7;
-		box-shadow: 0 0 10px rgba(79, 195, 247, 0.5);
-		transform: translateY(-1px);
-	}
-
-	.level-btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-
-	.level-btn.completed {
-		border-color: #69f0ae;
-	}
-
-	.level-number {
-		font-size: 1.25rem;
-		font-weight: bold;
-	}
-
-	.level-name {
-		font-size: 0.7rem;
-		color: #a0a0c0;
-		margin-top: 0.25rem;
-	}
-
-	.check {
-		position: absolute;
-		top: 4px;
-		right: 6px;
-		color: #69f0ae;
-		font-size: 0.9rem;
-		font-weight: bold;
-	}
-
-	.end-title {
-		font-size: 2rem;
-		font-weight: bold;
-		margin: 0;
-		font-family: monospace;
-	}
-
-	.end-title.success {
-		color: #69f0ae;
-	}
-
-	.end-title.failure {
-		color: #ff5252;
-	}
-
-	.end-subtitle {
-		font-size: 1rem;
-		color: #a0a0c0;
-		margin: 0;
-		font-family: monospace;
-	}
-
-	.btn-col {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		min-width: 180px;
-	}
-
-	.btn {
-		padding: 0.6rem 1.2rem;
-		background: #1a1a3a;
-		border: 1px solid #2a2a5a;
-		border-radius: 4px;
-		color: #e0e0e0;
-		cursor: pointer;
-		font-family: monospace;
-		font-size: 0.9rem;
-		transition: all 0.15s ease;
-		text-align: center;
-	}
-
-	.btn:hover {
-		background: #2a2a5a;
-		border-color: #4fc3f7;
-	}
-
-	.btn.focused {
-		background: #2a2a5a;
-		border-color: #4fc3f7;
-		box-shadow: 0 0 10px rgba(79, 195, 247, 0.5);
-		transform: translateY(-1px);
-	}
-
-	.btn.primary {
-		background: #2a3a5a;
-		border-color: #3a4a6a;
-	}
-
-	.btn.primary:hover,
-	.btn.primary.focused {
-		background: #3a4a6a;
-		border-color: #4fc3f7;
-	}
-
-	.hint {
-		font-size: 0.75rem;
-		color: white;
-		font-family: monospace;
-		margin-top: 0.5rem;
-	}
-</style>
