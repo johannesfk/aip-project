@@ -54,7 +54,7 @@ const COLORS = {
 	pathLine: 'rgba(255, 82, 82, 0.4)',
 	uiText: '#e0e0e0',
 	uiBg: 'rgba(0, 0, 0, 0.7)',
-	overlayBg: 'rgba(0, 0, 0, 0.2)',
+	overlayBg: 'rgba(0, 0, 0, 0.1)',
 	messageText: '#ffffff'
 };
 

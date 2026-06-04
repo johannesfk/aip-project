@@ -532,18 +532,19 @@
 		align-items: center;
 		justify-content: center;
 		gap: 1rem;
+		color: white;
 	}
 
 	.menu-overlay {
-		background: rgba(5, 5, 16, 0.95);
+		background: rgba(5, 5, 16, 1);
 	}
 
 	.pause-overlay {
-		background: rgba(5, 5, 16, 0.92);
+		background: rgba(5, 5, 16, 0.25);
 	}
 
 	.end-overlay {
-		background: rgba(5, 5, 16, 0.92);
+		background: rgba(60, 0, 0, 0.25);
 	}
 
 	.title {
@@ -695,7 +696,7 @@
 
 	.hint {
 		font-size: 0.75rem;
-		color: #606080;
+		color: white;
 		font-family: monospace;
 		margin-top: 0.5rem;
 	}
